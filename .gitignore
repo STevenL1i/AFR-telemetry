@@ -1,0 +1,8 @@
+
+*.xlsx
+*.log
+*.pyc
+*.png
+*.jpg
+*.jpeg
+server.json
