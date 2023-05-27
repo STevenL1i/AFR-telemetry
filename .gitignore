@@ -1,8 +1,10 @@
 
+*.csv
 *.xlsx
 *.log
 *.pyc
 *.png
 *.jpg
 *.jpeg
+test.py
 server.json
