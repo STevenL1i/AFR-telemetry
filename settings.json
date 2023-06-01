@@ -1,3 +1,22 @@
 {
-    "outputdir": "output"
+    "data": {
+        "outputdir": "output"
+    },
+
+
+    "image": {
+        "outputdir": "output",
+        "position": {
+            "size": {"length": 3840, "height": 1080}
+        },
+        "fastestlap": {
+            "size": {"length": 1920, "height": 1080}
+        },
+        "laptime": {
+            "size": {"length": 1920, "height": 1080}
+        },
+        "tyrewear": {
+            "size": {"length": 3840, "height": 2160}
+        }
+    }
 }

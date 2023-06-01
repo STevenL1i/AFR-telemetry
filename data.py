@@ -4,16 +4,17 @@ import dbconnect
 import mysql.connector
 
 import deffunc as func
+import image
 
 # loading settings
 settingsf = open("settings.json", "r")
 settings:dict = json.load(settingsf)
 settingsf.close()
 # check output dir correct
-outputdir = settings["outputdir"]
-os.system(f'if not exist "{outputdir}" mkdir "{outputdir}"')
-if outputdir[-1] != "/":
-    outputdir += "/"
+dataoutdir = settings["data"]["outputdir"]
+os.system(f'if not exist "{dataoutdir}" mkdir "{dataoutdir}"')
+if dataoutdir[-1] != "/":
+    dataoutdir += "/"
 
 AInamelist = ["VERSTAPPEN","LECLERC","HAMILTON","NORRIS","VETTEL","ALONSO","SAINZ","BOTTAS","PÉREZ","GASLY",
               "ZHOU","ALBON","OCON","SCHUMACHER","STROLL","RICCIARDO","TSUNODA","MAGNUSSEN","LATIFI","RUSSELL",
@@ -36,22 +37,75 @@ def asksessionid() -> tuple[int, int]:
         return int(sessionid1), int(sessionid2)
     except ValueError as e:
         return None, None
+
+
+def checkIPsrc(db:mysql.connector.MySQLConnection, sessionid:int):
+    cursor = db.cursor()
+
+    # check whether multiple ip source of the session
+    query = f'SELECT beginUnixTime, beginTime, IpList.ipDecimal, \
+                     ipString, ipComeFrom, ipOwner \
+            FROM SessionList \
+                JOIN IpList ON SessionList.ipDecimal = IpList.ipDecimal \
+            WHERE beginUnixTime = "{sessionid}";'
+    cursor.execute(query)
+    result = cursor.fetchall()
+
+    if len(result) == 1:
+        return result[0][2]
+    
+
+    print(f'Multiple ip source detected\nSession ID: {sessionid}\n')
+    print(f'{"option":<8}{"SourceIP":<18}{"IPLocation":<20}{"IPOwner":<15}')
+    for i in range(0, len(result)):
+        session = result[i]
+        ipinfo = json.loads(session[4])["data"][0]
+        print(f'{i+1:<8}{session[3]:<18}{ipinfo["location"]:<12}{session[5]:<15}')
+    
+    print()
+    choice = input("Please choose an IP source: ")
+    print()
+    try:
+        choice = int(choice)-1
+        if choice < 0:
+            choice = len(result)
+        return result[choice][2]
+    except (ValueError, IndexError):
+        return None
+    
+
+    
+    
+
+
     
 
 
 
 def getLapdata(db:mysql.connector.MySQLConnection,
-               sessionid1:int=None, sessionid2:int=None):
+               sessionid1:int=None, sessionid2:int=None, ipdec:int=None):
+    cursor = db.cursor()
+
     if sessionid1 == None:
         sessionid1, sessionid2 = asksessionid()
     elif sessionid1 != None and sessionid2 == None:
         sessionid2 = sessionid1
 
     if sessionid1 == None or sessionid2 == None:
-        print("no or error session id")
+        query = "SELECT MAX(beginUnixTime) FROM SessionList;"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        sessionid1 = result[0][0]
+        sessionid2 = result[0][0]
+
+    if ipdec == None:
+        ipdec = checkIPsrc(db, sessionid2)
+    if ipdec == None:
+        print("No/Wrong IP source selected......")
         return None
     
-    cursor = db.cursor()
+    print(func.delimiter_string(f'Lap time data ({sessionid2})', 60), end="\n\n")
+
 
     # """
     # get driver count of the session
@@ -59,6 +113,7 @@ def getLapdata(db:mysql.connector.MySQLConnection,
             WHERE beginUnixTime >= "{sessionid1}" and beginUnixTime <= "{sessionid2}" \
                 AND driverName in (SELECT driverName FROM Participants  \
                                    WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
+                AND ipDecimal = {ipdec} \
                                      AND aiControlled = 0);'
     cursor.execute(query)
     result = cursor.fetchall()
@@ -75,6 +130,7 @@ def getLapdata(db:mysql.connector.MySQLConnection,
               AND driverName in (SELECT driverName FROM Participants  \
                                  WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
                                  AND aiControlled = 0) \
+              AND ipDecimal = {ipdec} \
             ORDER BY curTime ASC, carIndex ASC, lapNum ASC;'
     cursor.execute(query)
     print(f'Fetching lap data from session {sessionid1} to {sessionid2}......')
@@ -92,17 +148,17 @@ def getLapdata(db:mysql.connector.MySQLConnection,
 
     # making output folder
     folder = f'Laptime ({sessionid2})'
-    os.system(f'if not exist "{outputdir}{folder}" mkdir "{outputdir}{folder}"')
+    os.system(f'if not exist "{dataoutdir}{folder}" mkdir "{dataoutdir}{folder}"')
 
 
     # making xlsx file
-    workbook = xlsxwriter.Workbook(f'{outputdir}{folder}/Laptime.xlsx')
+    workbook = xlsxwriter.Workbook(f'{dataoutdir}{folder}/Laptime.xlsx')
 
     for driver in sorted(laptimedata.keys()):
         lapdata = laptimedata[driver]
 
         # making csv file
-        csvfile = open(f'{outputdir}{folder}/{lapdata[0][3]}.csv', "w", newline="")
+        csvfile = open(f'{dataoutdir}{folder}/{lapdata[0][3]}.csv', "w", newline="")
         header = ["Lap", "driverName", "sector1", "sector2", "sector3", "Laptime", "Tyre", "TyreLapUsed"]
         writer = csv.DictWriter(csvfile, fieldnames=header)
         writer.writeheader()
@@ -145,6 +201,8 @@ def getLapdata(db:mysql.connector.MySQLConnection,
             rowcursor += 1
 
         csvfile.close()
+    
+    print()
 
 
     # fastest lapfile
@@ -154,6 +212,7 @@ def getLapdata(db:mysql.connector.MySQLConnection,
                 AND driverName in (SELECT driverName FROM Participants  \
                                    WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
                                      AND aiControlled = 0) \
+                AND ipDecimal = {ipdec} \
             ORDER BY curTime DESC, \
                 CASE bestLapTimeInMS \
                     WHEN 0 THEN 2 \
@@ -164,7 +223,7 @@ def getLapdata(db:mysql.connector.MySQLConnection,
     result = cursor.fetchall()
 
     # making csv file
-    csvfile = open(f'{outputdir}{folder}/fastest lap.csv', "w", newline="")
+    csvfile = open(f'{dataoutdir}{folder}/fastest lap.csv', "w", newline="")
     header = ["LapNum", "driverName", "sector1", "sector2", "sector3", "Laptime", "Tyre", "TyreLapUsed"]
     writer = csv.DictWriter(csvfile, fieldnames=header)
     writer.writeheader()
@@ -183,6 +242,7 @@ def getLapdata(db:mysql.connector.MySQLConnection,
         fastestlapsheet.write(0, i, header[i], defaultformat)
 
     rowcursor = 1
+    print(f'Writing fastest lap data......')
     for fl in result:
         # writing fastest lap to csv file
         lap = laptimedata[fl[2]][fl[4]-1]
@@ -204,38 +264,400 @@ def getLapdata(db:mysql.connector.MySQLConnection,
 
     csvfile.close()
     workbook.close()
+    print()
 
 
 
 
 def getTeledata(db:mysql.connector.MySQLConnection,
-               sessionid1:int=None, sessionid2:int=None):
+               sessionid1:int=None, sessionid2:int=None, ipdec:int=None):
+    cursor = db.cursor()
+
     if sessionid1 == None:
         sessionid1, sessionid2 = asksessionid()
     elif sessionid1 != None and sessionid2 == None:
         sessionid2 = sessionid1
 
     if sessionid1 == None or sessionid2 == None:
-        print("no or error session id")
+        query = "SELECT MAX(beginUnixTime) FROM SessionList;"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        sessionid1 = result[0][0]
+        sessionid2 = result[0][0]
+    
+    if ipdec == None:
+        ipdec = checkIPsrc(db, sessionid2)
+    if ipdec == None:
+        print("No/Wrong IP source selected......")
         return None
     
+    print(func.delimiter_string(f'Telemetry data ({sessionid2})', 60), end="\n\n")
+
+
+
+
+
+
+    print()
+
+
+
+
+def getPosdata(db:mysql.connector.MySQLConnection,
+               sessionid1:int=None, sessionid2:int=None, ipdec:int=None):
     cursor = db.cursor()
+
+    if sessionid1 == None:
+        sessionid1, sessionid2 = asksessionid()
+    elif sessionid1 != None and sessionid2 == None:
+        sessionid2 = sessionid1
+
+    if sessionid1 == None or sessionid2 == None:
+        query = "SELECT MAX(beginUnixTime) FROM SessionList;"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        sessionid1 = result[0][0]
+        sessionid2 = result[0][0]
+    
+    if ipdec == None:
+        ipdec = checkIPsrc(db, sessionid2)
+    if ipdec == None:
+        print("No/Wrong IP source selected......")
+        return None
+
+    print(func.delimiter_string(f'Race position data ({sessionid2})', 60), end="\n\n")
+    
+
+    positiondata = {}
+    """
+    positiondata = {
+        "driverName": {lapNum: carPosition}
+    }
+    """
+
+    # get starting grid position (from finalclassification)
+    query = f'SELECT beginUnixTime, curTime, position, driverName, gridPosition, numLaps, position \
+            FROM FinalClassification \
+            WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
+              AND ipDecimal = {ipdec} \
+            ORDER BY position ASC;'
+    cursor.execute(query)
+    result = cursor.fetchall()
+
+    # catagorize grid position by driver
+    for driver in result:
+        positiondata[driver[3]] = {0: driver[4], driver[5]+1: driver[6]}
+
+
+    # fetch position data
+    query = f'SELECT l1.beginUnixTime, l1.curTime, l1.carIndex, l1.driverName, l1.currentLapNum, l1.carPosition \
+            FROM LapData l1 JOIN LapData l2 \
+                             ON l1.beginUnixTime = l2.beginUnixTime \
+                            AND l1.carIndex = l2.carIndex \
+                            AND l1.currentLapTimeInMS > l2.currentLapTimeInMS \
+                            AND l1.lapDistance > l2.lapDistance \
+                            AND l1.curUnixTime = l2.curUnixTime - 1 \
+            WHERE l1.beginUnixTime >= "{sessionid1}" AND l1.beginUnixTime <= "{sessionid2}" \
+              AND l1.ipDecimal = {ipdec} \
+            ORDER BY l1.carIndex, l1.currentLapNum ASC;'
+    cursor.execute(query)
+    print(f'Fetching race position from session {sessionid1} to {sessionid2}......')
+    result = cursor.fetchall()
+
+    # catagorize position data by driver
+    for lappos in result:
+        positiondata[lappos[3]][lappos[4]] = lappos[5]
+
+
+    # making output folder
+    folder = f'Position ({sessionid2})'
+    os.system(f'if not exist "{dataoutdir}{folder}" mkdir "{dataoutdir}{folder}"')
+
+    posfilelist = []
+    for driver in sorted(positiondata.keys()):
+        driverposdata = positiondata[driver]
+
+        # making csv file
+        csvfile = open(f'{dataoutdir}{folder}/{driver}.csv', "w", newline="")
+        header = ["driverName", "lapNum", "position"]
+        writer = csv.DictWriter(csvfile, fieldnames=header)
+        writer.writeheader()
+
+        # writing to csv file
+        print(f'Writing position data: {driver}......')
+        for lap in sorted(driverposdata):
+            data = {"driverName": driver, "lapNum": lap, "position": driverposdata[lap]}
+            writer.writerow(data)
+        
+        csvfile.close()
+        posfilelist.append(f'{dataoutdir}{folder}/{driver}.csv')
+
+    print("Exporting race position summary graph......")
+    image.getPositionImage(posfilelist, f'{dataoutdir}{folder}/')
+    print()
+
+
+
+
+def getTyretempdata(db:mysql.connector.MySQLConnection,
+                sessionid1:int=None, sessionid2:int=None, ipdec:int=None):
+    cursor = db.cursor()
+
+    if sessionid1 == None:
+        sessionid1, sessionid2 = asksessionid()
+    elif sessionid1 != None and sessionid2 == None:
+        sessionid2 = sessionid1
+
+    if sessionid1 == None or sessionid2 == None:
+        query = "SELECT MAX(beginUnixTime) FROM SessionList;"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        sessionid1 = result[0][0]
+        sessionid2 = result[0][0]
+
+    if ipdec == None:
+        ipdec = checkIPsrc(db, sessionid2)
+    if ipdec == None:
+        print("No/Wrong IP source selected......")
+        return None
+
+    print(func.delimiter_string(f'Tyre wear data ({sessionid2})', 60), end="\n\n")
+
+
+    # fetching tyre temperature data
+    query = f'SELECT CarTelemetry.beginUnixTime, CarTelemetry.curTime, CarTelemetry.CarIndex, CarTelemetry.driverName, \
+                     LapData.currentLapNum, LapData.lapDistance, \
+                     CarTelemetry.tyresSurfaceTemperatureFL, CarTelemetry.tyresSurfaceTemperatureFR, \
+                     CarTelemetry.tyresSurfaceTemperatureRL, CarTelemetry.tyresSurfaceTemperatureRR, \
+                     CarTelemetry.tyresInnerTemperatureFL, CarTelemetry.tyresInnerTemperatureFR, \
+                     CarTelemetry.tyresInnerTemperatureRL, CarTelemetry.tyresInnerTemperatureRR \
+            FROM CarTelemetry JOIN LapData \
+                                ON CarTelemetry.beginUnixTime = LapData.beginUnixTime \
+                               AND CarTelemetry.curUnixTime = LapData.curUnixTime \
+                               AND CarTelemetry.carIndex = LapData.carIndex \
+                               AND CarTelemetry.ipDecimal = LapData.ipDecimal \
+            WHERE CarTelemetry.beginUnixTime >= "{sessionid1}" AND CarTelemetry.beginUnixTime <= "{sessionid2}" \
+              AND CarTelemetry.driverName in (SELECT driverName FROM Participants  \
+                                              WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
+                                                AND aiControlled = 0) \
+              AND CarTelemetry.ipDecimal = {ipdec} \
+            ORDER BY CarTelemetry.carIndex ASC ,CarTelemetry.curUnixTime ASC;'
+    print(f'Fetching tyre temp data from session {sessionid1} to {sessionid2}......')
+    cursor.execute(query)
+    result = cursor.fetchall()
+
+    # catagorize tyre temperature data by driver
+    tyretempdata = {}
+    for record in result:
+        try:
+            tyretempdata[record[2]].append(record)
+        except KeyError:
+            tyretempdata[record[2]] = [record]
+
+    
+    # making output folder
+    folder = f'Tyre Temperature ({sessionid2})'
+    os.system(f'if not exist "{dataoutdir}{folder}" mkdir "{dataoutdir}{folder}"')
+
+
+    # making xlsx file
+    workbook = xlsxwriter.Workbook(f'{dataoutdir}{folder}/TyreTemp.xlsx')
+
+    for driver in sorted(tyretempdata.keys()):
+        tyredata = tyretempdata[driver]
+
+        # making csv file
+        csvfile = open(f'{dataoutdir}{folder}/{tyredata[0][3]}.csv', "w", newline="")
+        header = ["Lap", "driverName", "LapDistance",
+                  "SurfaceFL", "SurfaceFR", "SurfaceRL", "SurfaceRR",
+                  "InnerFL", "InnerFR", "InnerRL", "InnerRR"]
+        writer = csv.DictWriter(csvfile, fieldnames=header)
+        writer.writeheader()
+
+        # making xlsx sheet
+        tyretempsheet = workbook.add_worksheet(tyredata[0][3])
+        tyretempsheet.set_column(0,0, 8)
+        tyretempsheet.set_column(1,1, 25)
+        tyretempsheet.set_column(2,2, 11)
+        tyretempsheet.set_column(3,10, 9)
+
+        defaultformat = workbook.add_format({"font_size":11})
+        defaultformat.set_font_name("Dengxian")
+        defaultformat.set_align("vcenter")
+        defaultformat.set_text_wrap()
+
+        # writing header
+        for i in range(0, len(header)):
+            tyretempsheet.write(0, i, header[i], defaultformat)
+        
+
+        rowcursor = 1
+        print(f'Writing tyre temp data: {tyredata[0][3]}......')
+        for record in sorted(tyredata, key=lambda x:x[1]):
+            # writing to csv file
+            data = {"Lap": record[4], "driverName": record[3], "LapDistance": record[5],
+                    "SurfaceFL": record[6], "SurfaceFR": record[7], "SurfaceRL": record[8], "SurfaceRR": record[9],
+                    "InnerFL": record[10], "InnerFR": record[11], "InnerRL": record[12], "InnerRR": record[13]}
+            writer.writerow(data)
+
+            # writing to xlsx file
+            tyretempsheet.write(rowcursor, 0, record[4], defaultformat)
+            tyretempsheet.write(rowcursor, 1, record[3], defaultformat)
+            tyretempsheet.write(rowcursor, 2, record[5], defaultformat)
+            tyretempsheet.write(rowcursor, 3, record[6], defaultformat)
+            tyretempsheet.write(rowcursor, 4, record[7], defaultformat)
+            tyretempsheet.write(rowcursor, 5, record[8], defaultformat)
+            tyretempsheet.write(rowcursor, 6, record[9], defaultformat)
+            tyretempsheet.write(rowcursor, 7, record[10], defaultformat)
+            tyretempsheet.write(rowcursor, 8, record[11], defaultformat)
+            tyretempsheet.write(rowcursor, 9, record[12], defaultformat)
+            tyretempsheet.write(rowcursor, 10, record[13], defaultformat)
+            rowcursor += 1
+
+        csvfile.close()
+    
+    workbook.close()
+    print()
+
+
+
+
+def getTyreweardata(db:mysql.connector.MySQLConnection,
+                sessionid1:int=None, sessionid2:int=None, ipdec:int=None):
+    cursor = db.cursor()
+
+    if sessionid1 == None:
+        sessionid1, sessionid2 = asksessionid()
+    elif sessionid1 != None and sessionid2 == None:
+        sessionid2 = sessionid1
+
+    if sessionid1 == None or sessionid2 == None:
+        query = "SELECT MAX(beginUnixTime) FROM SessionList;"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        sessionid1 = result[0][0]
+        sessionid2 = result[0][0]
+
+    if ipdec == None:
+        ipdec = checkIPsrc(db, sessionid2)
+    if ipdec == None:
+        print("No/Wrong IP source selected......")
+        return None
+
+    print(func.delimiter_string(f'Tyre wear data ({sessionid2})', 60), end="\n\n")
+
+
+    # fetching tyre wear data
+    query = f'SELECT l1.beginUnixTime, l1.curTime, l1.carIndex, l1.driverName, l1.currentLapNum, \
+                     CarDamage.tyresWearFL, CarDamage.tyresWearFR, CarDamage.tyresWearRL, CarDamage.tyresWearRR \
+            FROM LapData l1 JOIN LapData l2 \
+                                ON l1.beginUnixTime = l2.beginUnixTime \
+                                AND l1.carIndex = l2.carIndex \
+                                AND l1.currentLapTimeInMS > l2.currentLapTimeInMS \
+                                AND l1.lapDistance > l2.lapDistance \
+                                AND l1.curUnixTime = l2.curUnixTime - 1 \
+                                AND l1.ipDecimal = l2.ipDecimal \
+                            JOIN CarDamage \
+                                ON l1.beginUnixTime = CarDamage.beginUnixTime \
+                                AND l1.curUnixTime = CarDamage.curUnixTime \
+                                AND l1.carIndex = CarDamage.carIndex \
+                                AND l1.ipDecimal = CarDamage.ipDecimal \
+            WHERE l1.beginUnixTime >= "{sessionid1}" AND l1.beginUnixTime <= "{sessionid2}" \
+              AND l1.ipDecimal = {ipdec} \
+            ORDER BY l1.carIndex, l1.currentLapNum ASC;'
+    print(f'Fetching tyre wear data from session {sessionid1} to {sessionid2}......')
+    cursor.execute(query)
+    result = cursor.fetchall()
+
+    # catagorize tyre wear data by driver
+    tyreweardata = {}
+    for record in result:
+        try:
+            tyreweardata[record[2]].append(record)
+        except KeyError:
+            tyreweardata[record[2]] = [record]
+
+    
+    # making output folder
+    folder = f'Tyre Wear ({sessionid2})'
+    os.system(f'if not exist "{dataoutdir}{folder}" mkdir "{dataoutdir}{folder}"')
+
+
+    # making xlsx file
+    workbook = xlsxwriter.Workbook(f'{dataoutdir}{folder}/TyreWear.xlsx')
+
+    for driver in sorted(tyreweardata.keys()):
+        tyredata = tyreweardata[driver]
+
+        # making csv file
+        csvfile = open(f'{dataoutdir}{folder}/{tyredata[0][3]}.csv', "w", newline="")
+        header = ["Lap", "driverName", "FL", "FR", "RL", "RR"]
+        writer = csv.DictWriter(csvfile, fieldnames=header)
+        writer.writeheader()
+
+        # making xlsx sheet
+        tyrewearsheet = workbook.add_worksheet(tyredata[0][3])
+        tyrewearsheet.set_column(0,0, 8)
+        tyrewearsheet.set_column(1,1, 25)
+        tyrewearsheet.set_column(2,5, 6)
+
+        defaultformat = workbook.add_format({"font_size":11})
+        defaultformat.set_font_name("Dengxian")
+        defaultformat.set_align("vcenter")
+        defaultformat.set_text_wrap()
+
+        # writing header
+        for i in range(0, len(header)):
+            tyrewearsheet.write(0, i, header[i], defaultformat)
+
+        rowcursor = 1
+        print(f'Writing tyre wear data: {tyredata[0][3]}......')
+        for lap in sorted(tyredata, key=lambda x:x[4]):
+            # writing to csv file
+            data = {"Lap": lap[4], "driverName": lap[3], "FL": lap[5],
+                    "FR": lap[6], "RL": lap[7], "RR": lap[8]}
+            writer.writerow(data)
+
+            # writing to xlsx file
+            tyrewearsheet.write(rowcursor, 0, lap[4], defaultformat)
+            tyrewearsheet.write(rowcursor, 1, lap[3], defaultformat)
+            tyrewearsheet.write(rowcursor, 2, lap[5], defaultformat)
+            tyrewearsheet.write(rowcursor, 3, lap[6], defaultformat)
+            tyrewearsheet.write(rowcursor, 4, lap[7], defaultformat)
+            tyrewearsheet.write(rowcursor, 5, lap[8], defaultformat)
+            rowcursor += 1
+
+        csvfile.close()
+
+    workbook.close()
+    print()
 
 
 
 
 def getFinalClassification(db:mysql.connector.MySQLConnection,
-                           sessionid1:int=None, sessionid2:int=None):
+                           sessionid1:int=None, sessionid2:int=None, ipdec:int=None):
+    cursor = db.cursor()
+
     if sessionid1 == None:
         sessionid1, sessionid2 = asksessionid()
     elif sessionid1 != None and sessionid2 == None:
         sessionid2 = sessionid1
 
     if sessionid1 == None or sessionid2 == None:
-        print("no or error session id")
+        query = "SELECT MAX(beginUnixTime) FROM SessionList;"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        sessionid1 = result[0][0]
+        sessionid2 = result[0][0]
+
+    if ipdec == None:
+        ipdec = checkIPsrc(db, sessionid2)
+    if ipdec == None:
+        print("No/Wrong IP source selected......")
         return None
-    
-    cursor = db.cursor()
+
+    print(func.delimiter_string(f'Final Classification data ({sessionid2})', 60), end="\n\n")
 
 
     # fetch session final classification data
@@ -245,6 +667,7 @@ def getFinalClassification(db:mysql.connector.MySQLConnection,
                      numPenalties, penaltiesTime, tyreStintsVisual \
             FROM FinalClassification \
             WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
+              AND ipDecimal = {ipdec} \
             ORDER BY position ASC;'
     cursor.execute(query)
     print(f'Fetching finalclassification data from session {sessionid1} to {sessionid2}......')
@@ -253,11 +676,11 @@ def getFinalClassification(db:mysql.connector.MySQLConnection,
 
     # making output folder
     folder = f'Final Classification'
-    os.system(f'if not exist "{outputdir}{folder}" mkdir "{outputdir}{folder}"')
+    os.system(f'if not exist "{dataoutdir}{folder}" mkdir "{dataoutdir}{folder}"')
 
 
     # making csv file
-    csvfile = open(f'{outputdir}{folder}/FinalClassification_{sessionid2}.csv', "w", newline="")
+    csvfile = open(f'{dataoutdir}{folder}/FinalClassification_{sessionid2}.csv', "w", newline="")
     header = ["position", "driverName", "numLaps", "grid", "pits",
               "bestlap", "totaltime", "gap", "numPen", "penalty", "tyreStint"]
     writer = csv.DictWriter(csvfile, fieldnames=header)
@@ -265,7 +688,7 @@ def getFinalClassification(db:mysql.connector.MySQLConnection,
 
 
     # making xlsx file
-    workbook = xlsxwriter.Workbook(f'{outputdir}{folder}/FinalClassification_{sessionid2}.xlsx')
+    workbook = xlsxwriter.Workbook(f'{dataoutdir}{folder}/FinalClassification_{sessionid2}.xlsx')
     fcsheet = workbook.add_worksheet(f'FinalClassification_{sessionid2}')
     fcsheet.set_column(0,0, 8)
     fcsheet.set_column(1,1, 25)
@@ -310,26 +733,38 @@ def getFinalClassification(db:mysql.connector.MySQLConnection,
 
     csvfile.close()
     workbook.close()
+    print()
 
 
     # get race diretcor data of the session by the way
-    getRaceDirector(db, sessionid1, sessionid2)
+    getRaceDirector(db, sessionid1, sessionid2, ipdec)
 
 
 
 
 def getRaceDirector(db:mysql.connector.MySQLConnection,
-                    sessionid1:int=None, sessionid2:int=None):
+                    sessionid1:int=None, sessionid2:int=None, ipdec:int=None):
+    cursor = db.cursor()
+
     if sessionid1 == None:
         sessionid1, sessionid2 = asksessionid()
     elif sessionid1 != None and sessionid2 == None:
         sessionid2 = sessionid1
 
     if sessionid1 == None or sessionid2 == None:
-        print("no or error session id")
+        query = "SELECT MAX(beginUnixTime) FROM SessionList;"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        sessionid1 = result[0][0]
+        sessionid2 = result[0][0]
+
+    if ipdec == None:
+        ipdec = checkIPsrc(db, sessionid2)
+    if ipdec == None:
+        print("No/Wrong IP source selected......")
         return None
 
-    cursor = db.cursor()
+    print(func.delimiter_string(f'Race Director data ({sessionid2})', 60), end="\n\n")
     
 
     # fetch session race director data
@@ -337,6 +772,7 @@ def getRaceDirector(db:mysql.connector.MySQLConnection,
                      penaltyDescription, infringementDescription, timeGained, placesGained \
             FROM PenaltyUpdate \
             WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
+              AND ipDecimal = {ipdec} \
             ORDER BY curTime ASC;'
     cursor.execute(query)
     print(f'Fetching racedirector data from session {sessionid1} to {sessionid2}......')
@@ -344,11 +780,11 @@ def getRaceDirector(db:mysql.connector.MySQLConnection,
 
     # making output folder
     folder = f'Final Classification'
-    os.system(f'if not exist "{outputdir}{folder}" mkdir "{outputdir}{folder}"')
+    os.system(f'if not exist "{dataoutdir}{folder}" mkdir "{dataoutdir}{folder}"')
 
     
     # making csv file
-    csvfile = open(f'{outputdir}{folder}/RaceDirector_{sessionid2}.csv', "w", newline="")
+    csvfile = open(f'{dataoutdir}{folder}/RaceDirector_{sessionid2}.csv', "w", newline="")
     header = ["Lap", "driverName", "driverInvolved", "PenaltyType", "PenaltyDescriptions",
               "timeGained", "placeGained"]
     writer = csv.DictWriter(csvfile, fieldnames=header)
@@ -356,7 +792,7 @@ def getRaceDirector(db:mysql.connector.MySQLConnection,
 
 
     # making xlsx file
-    workbook = xlsxwriter.Workbook(f'{outputdir}{folder}/RaceDirector_{sessionid2}.xlsx')
+    workbook = xlsxwriter.Workbook(f'{dataoutdir}{folder}/RaceDirector_{sessionid2}.xlsx')
     rdsheet = workbook.add_worksheet(f'RaceDirector_{sessionid2}')
     rdsheet.set_column(0,0, 8)
     rdsheet.set_column(1,2, 25)
@@ -397,90 +833,113 @@ def getRaceDirector(db:mysql.connector.MySQLConnection,
 
     csvfile.close()
     workbook.close()
+    print()
 
 
 
 
-def getPosdata(db:mysql.connector.MySQLConnection,
-               sessionid1:int=None, sessionid2:int=None):
+def getWeatherReport(db:mysql.connector.MySQLConnection,
+                     sessionid1:int=None, sessionid2:int=None, ipdec:int=None):
+    cursor = db.cursor()
+
     if sessionid1 == None:
         sessionid1, sessionid2 = asksessionid()
     elif sessionid1 != None and sessionid2 == None:
         sessionid2 = sessionid1
 
     if sessionid1 == None or sessionid2 == None:
-        print("no or error session id")
+        query = "SELECT MAX(beginUnixTime) FROM SessionList;"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        sessionid1 = result[0][0]
+        sessionid2 = result[0][0]
+
+    if ipdec == None:
+        ipdec = checkIPsrc(db, sessionid2)
+    if ipdec == None:
+        print("No/Wrong IP source selected......")
         return None
 
-    cursor = db.cursor()
-    positiondata = {}
-    """
-    positiondata = {
-        "driverName": {lapNum: carPosition}
-    }
-    """
+    print(func.delimiter_string(f'Weather report ({sessionid2})', 60), end="\n\n")
 
-    # get starting grid position (from finalclassification)
-    query = f'SELECT beginUnixTime, curTime, position, driverName, gridPosition \
-            FROM FinalClassification \
+
+    # fetch weather report data
+    query = f'SELECT beginUnixTime, curTime, timeOffset, sessionTypeInStr, \
+                     weatherInStr, rainPercentage, trackTemperature \
+            FROM WeatherForecast \
             WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
-            ORDER BY position ASC;'
+              AND curUnixTime = (SELECT MIN(curUnixTime) FROM WeatherForecast \
+                                 WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}") \
+              AND ipDecimal = {ipdec} \
+            ORDER BY curTime ASC, sessionTypeInStr ASC, timeOffset ASC;'
+    print(f'Fetching weather report from session {sessionid1} to {sessionid2}......')
     cursor.execute(query)
     result = cursor.fetchall()
-
-    # catagorize grid position by driver
-    for driver in result:
-        positiondata[driver[3]] = {0: driver[4]}
-
-
-    # fetch position data
-    query = f'SELECT l1.beginUnixTime, l1.curTime, l1.carIndex, l1.driverName, l1.currentLapNum, l1.carPosition \
-            FROM LapData l1 JOIN LapData l2 \
-                             ON l1.beginUnixTime = l2.beginUnixTime \
-                            AND l1.carIndex = l2.carIndex \
-                            AND l1.currentLapTimeInMS > l2.currentLapTimeInMS \
-                            AND l1.lapDistance > l2.lapDistance \
-                            AND l1.curUnixTime = l2.curUnixTime - 1 \
-            WHERE l1.beginUnixTime >= "{sessionid1}" AND l1.beginUnixTime <= "{sessionid2}" \
-            ORDER BY l1.carIndex, l1.currentLapNum ASC;'
-    cursor.execute(query)
-    result = cursor.fetchall()
-
-    # catagorize position data by driver
-    for lappos in result:
-        positiondata[lappos[3]][lappos[4]] = lappos[5]
 
 
     # making output folder
-    folder = f'Position ({sessionid2})'
-    os.system(f'if not exist "{outputdir}{folder}" mkdir "{outputdir}{folder}"')
+    folder = f'Final Classification'
+    os.system(f'if not exist "{dataoutdir}{folder}" mkdir "{dataoutdir}{folder}"')
 
-    for driver in positiondata.keys():
-        driverposdata = positiondata[driver]
 
-        # making csv file
-        csvfile = open(f'{outputdir}{folder}/{driver}.csv', "w", newline="")
-        header = ["driverName", "lapNum", "position"]
-        writer = csv.DictWriter(csvfile, fieldnames=header)
-        writer.writeheader()
+    # making csv file
+    csvfile = open(f'{dataoutdir}{folder}/WeatherReport_{sessionid2}.csv', "w", newline="")
+    header = ["Time", "timeOffset", "Session", "Weather", "RainPct.", "TrackTemp"]
+    writer = csv.DictWriter(csvfile, fieldnames=header)
+    writer.writeheader()
 
+
+    # making xlsx file
+    workbook = xlsxwriter.Workbook(f'{dataoutdir}{folder}/WeatherReport_{sessionid2}.xlsx')
+    weathersheet = workbook.add_worksheet(f'WeatherReport_{sessionid2}')
+    weathersheet.set_column(0,0, 20)
+    weathersheet.set_column(1,1, 9)
+    weathersheet.set_column(2,2, 10)
+    weathersheet.set_column(2,2, 10)
+    weathersheet.set_column(3,3, 15)
+    weathersheet.set_column(4,4, 7)
+    weathersheet.set_column(5,5, 10)
+
+
+    defaultformat = workbook.add_format({"font_size":11})
+    defaultformat.set_font_name("Dengxian")
+    defaultformat.set_align("vcenter")
+    defaultformat.set_text_wrap()
+
+    # writing header
+    for i in range(0, len(header)):
+        weathersheet.write(0, i, header[i], defaultformat)
+    
+
+    rowcursor = 1
+    print(f'Writing weather report data from session {sessionid1} to {sessionid2}......')
+    for record in result:
         # writing to csv file
-        for lap in sorted(driverposdata):
-            data = {"driverName": driver, "lapNum": lap, "position": driverposdata[lap]}
-            writer.writerow(data)
-        
-        csvfile.close()
+        data = {"Time": record[1], "timeOffset": record[2], "Session": record[3],
+                "Weather": record[4], "RainPct.": record[5], "TrackTemp": record[6]}
+        writer.writerow(data)
 
 
+        # writing to xlsx file
+        weathersheet.write(rowcursor, 0, record[1].strftime("%Y-%m-%d %H:%M:%S"), defaultformat)
+        weathersheet.write(rowcursor, 1, record[2], defaultformat)
+        weathersheet.write(rowcursor, 2, record[3], defaultformat)
+        weathersheet.write(rowcursor, 3, record[4], defaultformat)
+        weathersheet.write(rowcursor, 4, record[5], defaultformat)
+        weathersheet.write(rowcursor, 5, record[6], defaultformat)
+        rowcursor += 1
 
-
-
+    csvfile.close()
+    workbook.close()
+    print()
 
 
 
 
 def deleteSessionData(db:mysql.connector.MySQLConnection,
                       sessionid1:int=None, sessionid2:int=None):
+    cursor = db.cursor()
+    
     if sessionid1 == None:
         sessionid1, sessionid2 = asksessionid()
     elif sessionid1 != None and sessionid2 == None:
@@ -489,8 +948,9 @@ def deleteSessionData(db:mysql.connector.MySQLConnection,
     if sessionid1 == None or sessionid2 == None:
         print("no or error session id")
         return None
+    
+    print(func.delimiter_string(f'Delete data ({sessionid1} - {sessionid2})', 60), end="\n\n")
 
-    cursor = db.cursor()
 
     query = f'SHOW tables;'
     cursor.execute(query)
@@ -511,19 +971,37 @@ def deleteSessionData(db:mysql.connector.MySQLConnection,
             continue
 
     db.commit()
+    print()
+
+
+
+
 
 
 
 
 # ------ testing use case ------ #
-getLapdata(dbconnect.connect_with_conf("server.json", "db"), 1684670903)
-getLapdata(dbconnect.connect_with_conf("server.json", "db"), 1684673362)
-getTeledata(dbconnect.connect_with_conf("server.json", "db"), 1684670903)
-getTeledata(dbconnect.connect_with_conf("server.json", "db"), 1684673362)
-getFinalClassification(dbconnect.connect_with_conf("server.json", "db"), 1684670903)
-getFinalClassification(dbconnect.connect_with_conf("server.json", "db"), 1684673362)
+sessionid1 = 1685275562
+sessionid2 = 1685275562
+sessionid3 = 1685276834
+sessionid4 = 1685276834
 
-getPosdata(dbconnect.connect_with_conf("server.json", "db"), 1684673362)
+#getLapdata(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
+#getLapdata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
+#getTeledata(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
+#getTeledata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
+
+#getPosdata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
+#getTyreweardata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
+#getTyretempdata(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
+#getTyretempdata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
+
+#getFinalClassification(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
+#getFinalClassification(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
+#getRaceDirector(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
+#getRaceDirector(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
+
+#getWeatherReport(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
 
 
 
