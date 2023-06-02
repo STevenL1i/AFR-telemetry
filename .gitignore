@@ -7,6 +7,8 @@
 *.jpg
 *.jpeg
 *.ini
+*.zip
+*.spec
 test.py
 test_image.py
 server.json

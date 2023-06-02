@@ -22,63 +22,8 @@ AInamelist = ["VERSTAPPEN","LECLERC","HAMILTON","NORRIS","VETTEL","ALONSO","SAIN
               "舒马赫","马格努森","博塔斯","维特尔","斯特尔","阿尔本","拉蒂菲","汉密尔顿",""]
 
 
-def asksessionid() -> tuple[int, int]:
-    sessionid1 = input("please enter session id 1: ")
-    if sessionid1 == "q" or sessionid1 == "Q":
-        return None, None
-    sessionid2 = input("please enter session id 2: ")
-    if sessionid2 == "q" or sessionid2 == "Q":
-        return None, None
-    
-    if sessionid2.replace(" ", "") == "":
-        sessionid2 = sessionid1
-
-    try:
-        return int(sessionid1), int(sessionid2)
-    except ValueError as e:
-        return None, None
 
 
-def checkIPsrc(db:mysql.connector.MySQLConnection, sessionid:int):
-    cursor = db.cursor()
-
-    # check whether multiple ip source of the session
-    query = f'SELECT beginUnixTime, beginTime, IpList.ipDecimal, \
-                     ipString, ipComeFrom, ipOwner \
-            FROM SessionList \
-                JOIN IpList ON SessionList.ipDecimal = IpList.ipDecimal \
-            WHERE beginUnixTime = "{sessionid}";'
-    cursor.execute(query)
-    result = cursor.fetchall()
-
-    if len(result) == 1:
-        return result[0][2]
-    
-
-    print(f'Multiple ip source detected\nSession ID: {sessionid}\n')
-    print(f'{"option":<8}{"SourceIP":<18}{"IPLocation":<20}{"IPOwner":<15}')
-    for i in range(0, len(result)):
-        session = result[i]
-        ipinfo = json.loads(session[4])["data"][0]
-        print(f'{i+1:<8}{session[3]:<18}{ipinfo["location"]:<12}{session[5]:<15}')
-    
-    print()
-    choice = input("Please choose an IP source: ")
-    print()
-    try:
-        choice = int(choice)-1
-        if choice < 0:
-            choice = len(result)
-        return result[choice][2]
-    except (ValueError, IndexError):
-        return None
-    
-
-    
-    
-
-
-    
 
 
 
@@ -87,7 +32,7 @@ def getLapdata(db:mysql.connector.MySQLConnection,
     cursor = db.cursor()
 
     if sessionid1 == None:
-        sessionid1, sessionid2 = asksessionid()
+        sessionid1, sessionid2 = func.asksessionid()
     elif sessionid1 != None and sessionid2 == None:
         sessionid2 = sessionid1
 
@@ -97,28 +42,16 @@ def getLapdata(db:mysql.connector.MySQLConnection,
         result = cursor.fetchall()
         sessionid1 = result[0][0]
         sessionid2 = result[0][0]
+    elif sessionid1 == "Nosession" and sessionid2 == "Nosession":
+        return None
 
     if ipdec == None:
-        ipdec = checkIPsrc(db, sessionid2)
+        ipdec = func.checkIPsrc(db, sessionid2)
     if ipdec == None:
         print("No/Wrong IP source selected......")
         return None
     
     print(func.delimiter_string(f'Lap time data ({sessionid2})', 60), end="\n\n")
-
-
-    # """
-    # get driver count of the session
-    query = f'SELECT MAX(carIndex) FROM Participants \
-            WHERE beginUnixTime >= "{sessionid1}" and beginUnixTime <= "{sessionid2}" \
-                AND driverName in (SELECT driverName FROM Participants  \
-                                   WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
-                AND ipDecimal = {ipdec} \
-                                     AND aiControlled = 0);'
-    cursor.execute(query)
-    result = cursor.fetchall()
-    drivercount = result[0][0]
-    # """
 
 
     # fetch session laptime data
@@ -213,12 +146,12 @@ def getLapdata(db:mysql.connector.MySQLConnection,
                                    WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
                                      AND aiControlled = 0) \
                 AND ipDecimal = {ipdec} \
-            ORDER BY curTime DESC, \
-                CASE bestLapTimeInMS \
+                AND curUnixTime = (SELECT MAX(curUnixTime) FROM BestLap \
+                                   WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}")\
+            ORDER BY CASE bestLapTimeInMS \
                     WHEN 0 THEN 2 \
                     ELSE 1 \
-                END, bestLapTimeInMS ASC \
-            LIMIT {drivercount};'
+                END, bestLapTimeInMS ASC;'
     cursor.execute(query)
     result = cursor.fetchall()
 
@@ -274,7 +207,7 @@ def getTeledata(db:mysql.connector.MySQLConnection,
     cursor = db.cursor()
 
     if sessionid1 == None:
-        sessionid1, sessionid2 = asksessionid()
+        sessionid1, sessionid2 = func.asksessionid()
     elif sessionid1 != None and sessionid2 == None:
         sessionid2 = sessionid1
 
@@ -284,9 +217,11 @@ def getTeledata(db:mysql.connector.MySQLConnection,
         result = cursor.fetchall()
         sessionid1 = result[0][0]
         sessionid2 = result[0][0]
+    elif sessionid1 == "Nosession" and sessionid2 == "Nosession":
+        return None
     
     if ipdec == None:
-        ipdec = checkIPsrc(db, sessionid2)
+        ipdec = func.checkIPsrc(db, sessionid2)
     if ipdec == None:
         print("No/Wrong IP source selected......")
         return None
@@ -308,7 +243,7 @@ def getPosdata(db:mysql.connector.MySQLConnection,
     cursor = db.cursor()
 
     if sessionid1 == None:
-        sessionid1, sessionid2 = asksessionid()
+        sessionid1, sessionid2 = func.asksessionid()
     elif sessionid1 != None and sessionid2 == None:
         sessionid2 = sessionid1
 
@@ -318,9 +253,11 @@ def getPosdata(db:mysql.connector.MySQLConnection,
         result = cursor.fetchall()
         sessionid1 = result[0][0]
         sessionid2 = result[0][0]
+    elif sessionid1 == "Nosession" and sessionid2 == "Nosession":
+        return None
     
     if ipdec == None:
-        ipdec = checkIPsrc(db, sessionid2)
+        ipdec = func.checkIPsrc(db, sessionid2)
     if ipdec == None:
         print("No/Wrong IP source selected......")
         return None
@@ -404,7 +341,7 @@ def getTyretempdata(db:mysql.connector.MySQLConnection,
     cursor = db.cursor()
 
     if sessionid1 == None:
-        sessionid1, sessionid2 = asksessionid()
+        sessionid1, sessionid2 = func.asksessionid()
     elif sessionid1 != None and sessionid2 == None:
         sessionid2 = sessionid1
 
@@ -414,9 +351,11 @@ def getTyretempdata(db:mysql.connector.MySQLConnection,
         result = cursor.fetchall()
         sessionid1 = result[0][0]
         sessionid2 = result[0][0]
+    elif sessionid1 == "Nosession" and sessionid2 == "Nosession":
+        return None
 
     if ipdec == None:
-        ipdec = checkIPsrc(db, sessionid2)
+        ipdec = func.checkIPsrc(db, sessionid2)
     if ipdec == None:
         print("No/Wrong IP source selected......")
         return None
@@ -527,7 +466,7 @@ def getTyreweardata(db:mysql.connector.MySQLConnection,
     cursor = db.cursor()
 
     if sessionid1 == None:
-        sessionid1, sessionid2 = asksessionid()
+        sessionid1, sessionid2 = func.asksessionid()
     elif sessionid1 != None and sessionid2 == None:
         sessionid2 = sessionid1
 
@@ -537,9 +476,11 @@ def getTyreweardata(db:mysql.connector.MySQLConnection,
         result = cursor.fetchall()
         sessionid1 = result[0][0]
         sessionid2 = result[0][0]
+    elif sessionid1 == "Nosession" and sessionid2 == "Nosession":
+        return None
 
     if ipdec == None:
-        ipdec = checkIPsrc(db, sessionid2)
+        ipdec = func.checkIPsrc(db, sessionid2)
     if ipdec == None:
         print("No/Wrong IP source selected......")
         return None
@@ -640,7 +581,7 @@ def getFinalClassification(db:mysql.connector.MySQLConnection,
     cursor = db.cursor()
 
     if sessionid1 == None:
-        sessionid1, sessionid2 = asksessionid()
+        sessionid1, sessionid2 = func.asksessionid()
     elif sessionid1 != None and sessionid2 == None:
         sessionid2 = sessionid1
 
@@ -650,9 +591,11 @@ def getFinalClassification(db:mysql.connector.MySQLConnection,
         result = cursor.fetchall()
         sessionid1 = result[0][0]
         sessionid2 = result[0][0]
+    elif sessionid1 == "Nosession" and sessionid2 == "Nosession":
+        return None
 
     if ipdec == None:
-        ipdec = checkIPsrc(db, sessionid2)
+        ipdec = func.checkIPsrc(db, sessionid2)
     if ipdec == None:
         print("No/Wrong IP source selected......")
         return None
@@ -747,7 +690,7 @@ def getRaceDirector(db:mysql.connector.MySQLConnection,
     cursor = db.cursor()
 
     if sessionid1 == None:
-        sessionid1, sessionid2 = asksessionid()
+        sessionid1, sessionid2 = func.asksessionid()
     elif sessionid1 != None and sessionid2 == None:
         sessionid2 = sessionid1
 
@@ -757,9 +700,11 @@ def getRaceDirector(db:mysql.connector.MySQLConnection,
         result = cursor.fetchall()
         sessionid1 = result[0][0]
         sessionid2 = result[0][0]
+    elif sessionid1 == "Nosession" and sessionid2 == "Nosession":
+        return None
 
     if ipdec == None:
-        ipdec = checkIPsrc(db, sessionid2)
+        ipdec = func.checkIPsrc(db, sessionid2)
     if ipdec == None:
         print("No/Wrong IP source selected......")
         return None
@@ -843,7 +788,7 @@ def getWeatherReport(db:mysql.connector.MySQLConnection,
     cursor = db.cursor()
 
     if sessionid1 == None:
-        sessionid1, sessionid2 = asksessionid()
+        sessionid1, sessionid2 = func.asksessionid()
     elif sessionid1 != None and sessionid2 == None:
         sessionid2 = sessionid1
 
@@ -853,9 +798,11 @@ def getWeatherReport(db:mysql.connector.MySQLConnection,
         result = cursor.fetchall()
         sessionid1 = result[0][0]
         sessionid2 = result[0][0]
+    elif sessionid1 == "Nosession" and sessionid2 == "Nosession":
+        return None
 
     if ipdec == None:
-        ipdec = checkIPsrc(db, sessionid2)
+        ipdec = func.checkIPsrc(db, sessionid2)
     if ipdec == None:
         print("No/Wrong IP source selected......")
         return None
@@ -941,11 +888,14 @@ def deleteSessionData(db:mysql.connector.MySQLConnection,
     cursor = db.cursor()
     
     if sessionid1 == None:
-        sessionid1, sessionid2 = asksessionid()
+        sessionid1, sessionid2 = func.asksessionid()
     elif sessionid1 != None and sessionid2 == None:
         sessionid2 = sessionid1
 
     if sessionid1 == None or sessionid2 == None:
+        print("no or error session id")
+        return None
+    elif sessionid1 == "Nosession" and sessionid2 == "Nosession":
         print("no or error session id")
         return None
     
@@ -986,22 +936,22 @@ sessionid2 = 1685275562
 sessionid3 = 1685276834
 sessionid4 = 1685276834
 
-#getLapdata(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
-#getLapdata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
-#getTeledata(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
-#getTeledata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
+# getLapdata(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
+# getLapdata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
+# getTeledata(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
+# getTeledata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
 
-#getPosdata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
-#getTyreweardata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
-#getTyretempdata(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
-#getTyretempdata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
+# getPosdata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
+# getTyreweardata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
+# getTyretempdata(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
+# getTyretempdata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
 
-#getFinalClassification(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
-#getFinalClassification(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
-#getRaceDirector(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
-#getRaceDirector(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
+# getFinalClassification(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
+# getFinalClassification(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
+# getRaceDirector(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
+# getRaceDirector(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
 
-#getWeatherReport(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
+# getWeatherReport(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
 
 
 

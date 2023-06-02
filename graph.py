@@ -1,22 +1,39 @@
 import json, traceback
 
+import dbconnect
+import mysql.connector
 
+import tele
 import image
 
+# loading settings
+settingsf = open("settings.json", "r")
+settings:dict = json.load(settingsf)
+settingsf.close()
+mode = settings["image"]["mode"]
 
-def offlinemain():
+
+def main(mode:str):
+    if mode == "ONLINE":
+        db = dbconnect.connect_with_auth(host=settings["server"],
+                                         port=3306,
+                                         user="telepublic",
+                                         password="afr@telepublic",
+                                         database="f1_2022_tele")
     
     option = [
+        "recent session id",        # passed
         "position summary",         # passed
         "fastest lap",              # standby
         "lap time",                 # passed
         "tyre wear",                # passed
-        "telemetry",                # waiting for database update
+        #"telemetry",               # waiting for database update
     ]
 
     while True:
         try:
             print("Welcome to AFR telemetry graph app")
+            print(f'Current mode: {mode}')
             print()
             for i in range(0, len(option)):
                 print(f'{i+1}. {option[i]}')
@@ -26,29 +43,52 @@ def offlinemain():
             print()
             choice = input("your choice: ")
 
-            if choice == "1" or choice.replace(" ","").lower() == "position":
-                image.getPositionImage()
+            if choice == "1" or choice.replace(" ","").lower() == "sessiondata" \
+                             or choice.replace(" ","").lower() == "sessionid":
+                if mode == "OFFLINE":
+                    print("This function is not support for OFFLINE MODE\nPlease enter ONLINE MODE for this function")
+                else:
+                    tele.getSessionID(db)
                 input("press enter back to main menu......")
                 print()
 
 
 
-            if choice == "2" or choice.replace(" ","").lower() == "fastestlap":
-                image.getFastestlapImage()
+            elif choice == "2" or choice.replace(" ","").lower() == "position":
+                if mode == "OFFLINE":
+                    image.getPositionImage()
+                else:
+                    image.getPositionImage_ONLINE(db)
                 input("press enter back to main menu......")
                 print()
 
 
 
-            elif choice == "3" or choice.replace(" ","").lower() == "laptime":
-                image.getLaptimeImage()
+            if choice == "3" or choice.replace(" ","").lower() == "fastestlap":
+                if mode == "OFFLINE":
+                    image.getFastestlapImage()
+                else:
+                    image.getFastestlapImage_ONLINE(db)
                 input("press enter back to main menu......")
                 print()
 
 
 
-            elif choice == "4" or choice.replace(" ","").lower() == "tyrewear":
-                image.getTyrewearImage()
+            elif choice == "4" or choice.replace(" ","").lower() == "laptime":
+                if mode == "OFFLINE":
+                    image.getLaptimeImage()
+                else:
+                    image.getLaptimeImage_ONLINE(db)
+                input("press enter back to main menu......")
+                print()
+
+
+
+            elif choice == "5" or choice.replace(" ","").lower() == "tyrewear":
+                if mode == "OFFLINE":
+                    image.getTyrewearImage()
+                else:
+                    image.getTyrewearImage_ONLINE(db)
                 input("press enter back to main menu......")
                 print()
 
@@ -83,5 +123,14 @@ def offlinemain():
             input("press enter back to main menu......")
 
 
+
+
+
+
 if __name__ == "__main__":
-    offlinemain()
+    # offline mode is by default
+    # use ONLINE mode only when specified in settings
+    if mode == "ONLINE":
+        main("ONLINE")
+    else:
+        main("OFFLINE")

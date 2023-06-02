@@ -5,6 +5,11 @@ import dbconnect
 import mysql.connector
 
 import data
+import deffunc as func
+# loading settings
+settingsf = open("settings.json", "r")
+settings:dict = json.load(settingsf)
+settingsf.close()
 
 
 
@@ -76,8 +81,12 @@ def getSessionID(db:mysql.connector.MySQLConnection):
 
 
 def main():
-    db = dbconnect.connect_with_conf("server.json", "db")
-    
+    db = dbconnect.connect_with_auth(host=settings["server"],
+                                     port=3306,
+                                     user="telepublic",
+                                     password="afr@telepublic",
+                                     database="f1_2022_tele")
+
     option = [
         "recent session id",        # passed
         "session lapdata",          # passed
@@ -116,7 +125,7 @@ def main():
 
             elif choice == "3" or choice.replace(" ","").lower() == "teledata" \
                                or choice.replace(" ","").lower() == "telemetry":
-
+                print("新建文件夹。。。。。。")
                 input("press enter back to main menu......")
                 print()
 
@@ -133,6 +142,13 @@ def main():
             elif choice.replace(" ","").lower() == "rddata" \
               or choice.replace(" ","").lower() == "racedirector":
                 data.getRaceDirector(db)
+                input("press enter back to main menu......")
+                print()
+
+
+
+            elif choice.replace(" ","").lower() == "weather":
+                data.getWeatherReport(db)
                 input("press enter back to main menu......")
                 print()
 
@@ -163,26 +179,28 @@ def main():
             elif choice == "5" or choice.replace(" ","").lower() == "alldata":
                 # qualiying
                 print("please enter qualiying session id")
-                sessionid1, sessionid2 = data.asksessionid()
+                sessionid1, sessionid2 = func.asksessionid()
                 if sessionid1 == None or sessionid2 == None:
                     print("no or error session id")
                     input("press enter back to main menu......")
                     continue
+                elif sessionid1 == "Nosession" and sessionid2 == "Nosession":
+                    return None
 
-                ipdec1 = data.checkIPsrc(db, sessionid2)
+                ipdec1 = func.checkIPsrc(db, sessionid2)
                 if ipdec1 == None:
                     print("No/Wrong IP source selected......")
                     return None
 
                 # race
                 print("please enter race session id")
-                sessionid3, sessionid4 = data.asksessionid()
+                sessionid3, sessionid4 = func.asksessionid()
                 if sessionid3 == None or sessionid4 == None:
                     print("no or error session id")
                     input("press enter back to main menu......")
                     continue
 
-                ipdec2 = data.checkIPsrc(db, sessionid4)
+                ipdec2 = func.checkIPsrc(db, sessionid4)
                 if ipdec2 == None:
                     print("No/Wrong IP source selected......")
                     return None
