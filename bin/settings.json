@@ -1,0 +1,26 @@
+{
+    "server": "43.139.83.100",
+    "afr_Guangzhou (race tele)":   "43.139.83.100",
+    "afr_Hongkong (practice)":     "43.128.56.235",
+    "data": {
+        "outputdir": "output"
+    },
+
+
+    "image": {
+        "mode": "ONLINE",
+        "outputdir": "output",
+        "position": {
+            "size": {"length": 3840, "height": 1080}
+        },
+        "fastestlap": {
+            "size": {"length": 1920, "height": 1080}
+        },
+        "laptime": {
+            "size": {"length": 1920, "height": 1080}
+        },
+        "tyrewear": {
+            "size": {"length": 3840, "height": 2160}
+        }
+    }
+}
