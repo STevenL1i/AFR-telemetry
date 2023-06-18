@@ -229,10 +229,66 @@ def getTeledata(db:mysql.connector.MySQLConnection,
     print(func.delimiter_string(f'Telemetry data ({sessionid2})', 60), end="\n\n")
 
 
+    # fetch session telemetry data
+    query = f''
+    cursor.execute(query)
+    print(f'Fetching tele data from session {sessionid1} to {sessionid2}......')
 
 
+    # fetch session telemetry data
+    query = f'SELECT beginUnixTime, frameIdentifier, curTime, carIndex, driverName, currentLapNum, \
+                     lapDistance, currentLapTimeInMS, speed, throttle, brake, gear, engineRPM, \
+                     worldPositionX, worldPositionY, worldPositionZ \
+            FROM CarDetails \
+            WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
+              AND driverName in (SELECT driverName FROM Participants \
+                                 WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
+                                 AND aiControlled = 0) \
+            ORDER BY curTime ASC, frameIdentifier ASC, carIndex ASC;'
+    cursor.execute(query)
+    result = cursor.fetchall()
+    
+    
+    # catagorize telemetry data by driver
+    telemetrydata = {}
+    for record in result:
+        try:
+            telemetrydata[record[3]].append(record)
+        except KeyError:
+            telemetrydata[record[3]] = [record]
+    
+    
+    # making output folder
+    folder = f'Telemetry ({sessionid2})'
+    os.system(f'if not exist "{dataoutdir}{folder}" mkdir "{dataoutdir}{folder}"')
 
 
+    # making xlsx file
+    # workbook = xlsxwriter.Workbook(f'{dataoutdir}{folder}/Telemetry.xlsx')
+
+    for driver in sorted(telemetrydata.keys()):
+        teledata = telemetrydata[driver]
+
+        # making csv file
+        csvfile = open(f'{dataoutdir}{folder}/{teledata[0][4]}.csv', "w", newline="")
+        header = ["frameIdentifier", "curTime", "driverName", "currentLapNum",
+                  "lapDistance", "currentLapTime", "speed", "throttle", "brake", "gear", "engineRPM",
+                  "worldPositionX", "worldPositionY", "worldPositionZ"]
+        writer = csv.DictWriter(csvfile, fieldnames=header)
+        writer.writeheader()
+
+        # making xlsx sheet
+        # skip
+
+        print(f'Writing telemetry data: {teledata[0][4]}......')
+        for data in sorted(teledata, key=lambda x: (x[2], x[1])):
+            data = {"frameIdentifier": data[1], "curTime": data[2], "driverName": data[4],
+                    "currentLapNum": data[5], "lapDistance": data[6], "currentLapTime": data[7],
+                    "speed": data[8], "throttle": data[9], "brake": data[10], "gear": data[11], "engineRPM": data[12],
+                    "worldPositionX": data[13], "worldPositionY": data[14], "worldPositionZ": data[15]}
+            writer.writerow(data)
+        
+        csvfile.close()
     print()
 
 
@@ -902,7 +958,7 @@ def deleteSessionData(db:mysql.connector.MySQLConnection,
     print(func.delimiter_string(f'Delete data ({sessionid1} - {sessionid2})', 60), end="\n\n")
 
 
-    query = f'SHOW tables;'
+    query = f'SHOW full tables WHERE Table_Type = "BASE TABLE";'
     cursor.execute(query)
     result = cursor.fetchall()
 
@@ -917,7 +973,8 @@ def deleteSessionData(db:mysql.connector.MySQLConnection,
                     WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}";'
             print(f'deleting data from {tablename}......')
             cursor.execute(query)
-        except mysql.connector.errors.ProgrammingError:
+        except mysql.connector.errors.ProgrammingError as e:
+            print(str(e))
             continue
 
     db.commit()
@@ -931,16 +988,15 @@ def deleteSessionData(db:mysql.connector.MySQLConnection,
 
 
 # ------ testing use case ------ #
-sessionid1 = 1685275562
-sessionid2 = 1685275562
-sessionid3 = 1685276834
-sessionid4 = 1685276834
+sessionid1 = 1687003456
+sessionid2 = 1687003456
+sessionid3 = 1687005345
+sessionid4 = 1687005345
 
 # getLapdata(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
 # getLapdata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
 # getTeledata(dbconnect.connect_with_conf("server.json", "db"), sessionid1)
 # getTeledata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
-
 # getPosdata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
 # getTyreweardata(dbconnect.connect_with_conf("server.json", "db"), sessionid3)
 # getTyretempdata(dbconnect.connect_with_conf("server.json", "db"), sessionid1)

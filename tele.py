@@ -83,8 +83,10 @@ def getSessionID(db:mysql.connector.MySQLConnection):
 def main():
     db = dbconnect.connect_with_auth(host=settings["server"],
                                      port=3306,
-                                     user="telepublic",
-                                     password="afr@telepublic",
+                                     #user="telepublic",
+                                     #password="afr@telepublic"
+                                     user="StevenLi",
+                                     password="ABC@1120ab",
                                      database="f1_2022_tele")
 
     option = [
@@ -125,7 +127,7 @@ def main():
 
             elif choice == "3" or choice.replace(" ","").lower() == "teledata" \
                                or choice.replace(" ","").lower() == "telemetry":
-                print("新建文件夹。。。。。。")
+                data.getTeledata(db)
                 input("press enter back to main menu......")
                 print()
 
