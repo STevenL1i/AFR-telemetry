@@ -156,6 +156,7 @@ def getPositionImage(files:tuple=None, outdir:str=None):
 
 
 
+
 def getFastestlapImage(file:str=None, outdir:str=None):
     if file == None:
         root = tkinter.Tk()
@@ -467,6 +468,205 @@ def getTyrewearImage(files:tuple=None, outdir:str=None):
     else:
         plt.savefig(f'{outdir}{filename}.png', format="png")
         print(f'Tyre wear comparison graph saved to "{outdir}{filename}.png"')
+
+
+
+
+def getTeleImage(files:tuple=None, outdir:str=None):
+    # ask for input files if no inut from parameter
+    if files == None:
+        root = tkinter.Tk()
+        root.withdraw()
+        files = filedialog.askopenfilenames()
+
+    # Input files validations
+    for file in files:
+        try:
+            f = open(file, "r")
+            reader = csv.DictReader(f)
+            header = list(list(reader)[0].keys())
+            if header != ["frameIdentifier", "curTime", "driverName", "currentLapNum",
+                          "lapDistance", "currentLapTime", "speed", "steer", "throttle", "brake", "gear",
+                          "engineRPM", "ersDeployMode", "worldPositionX", "worldPositionY", "worldPositionZ"]:
+                raise KeyError
+            f.close()
+        except FileNotFoundError:
+            print(f'File Not Found: {file}')
+            return None
+        except Exception:
+            print(f'File Validation error: {file}')
+            return None
+
+
+    # create plot
+    length = settings["image"]["telemetry"]["size"]["length"]
+    height = settings["image"]["telemetry"]["size"]["height"]
+    figspeed, axspeed = plt.subplots(figsize=(length/100, height/100))
+    figthrottle, axthrottle = plt.subplots(figsize=(length/100, height/100))
+    figbrake, axbrake = plt.subplots(figsize=(length/100, height/100))
+    figsteer, axsteer = plt.subplots(figsize=(length/100, height/100))
+    figgear, axgear = plt.subplots(figsize=(length/100, height/100))
+
+    # full telemetry
+    fulllength = settings["image"]["fulltele"]["size"]["length"]
+    fullheight = settings["image"]["fulltele"]["size"]["height"]
+    fig, axs = plt.subplots(5, figsize=(fulllength/100, fullheight/100))
+    ax1:plt.Axes = axs[0]       # speed
+    ax2:plt.Axes = axs[1]       # throttle
+    ax3:plt.Axes = axs[2]       # brake
+    ax4:plt.Axes = axs[3]       # steer
+    ax5:plt.Axes = axs[4]       # gear
+
+    # set axis interval
+    ax1.xaxis.set_major_locator(plt.MultipleLocator(200));  axspeed.xaxis.set_major_locator(plt.MultipleLocator(200))
+    ax2.xaxis.set_major_locator(plt.MultipleLocator(200));  axthrottle.xaxis.set_major_locator(plt.MultipleLocator(200))
+    ax3.xaxis.set_major_locator(plt.MultipleLocator(200));  axbrake.xaxis.set_major_locator(plt.MultipleLocator(200))
+    ax4.xaxis.set_major_locator(plt.MultipleLocator(200));  axsteer.xaxis.set_major_locator(plt.MultipleLocator(200))
+    ax5.xaxis.set_major_locator(plt.MultipleLocator(200));  axgear.xaxis.set_major_locator(plt.MultipleLocator(200))
+    
+    ax1.yaxis.set_major_locator(plt.MultipleLocator(10));   axspeed.yaxis.set_major_locator(plt.MultipleLocator(10))
+    ax2.yaxis.set_major_locator(plt.MultipleLocator(0.1));  axthrottle.yaxis.set_major_locator(plt.MultipleLocator(0.1))
+    ax3.yaxis.set_major_locator(plt.MultipleLocator(0.1));  axbrake.yaxis.set_major_locator(plt.MultipleLocator(0.1))
+    ax4.yaxis.set_major_locator(plt.MultipleLocator(0.1));  axsteer.yaxis.set_major_locator(plt.MultipleLocator(0.1))
+    ax5.yaxis.set_major_locator(plt.MultipleLocator(1));    axgear.yaxis.set_major_locator(plt.MultipleLocator(1))
+
+
+    # create plot title
+    figspeed.suptitle("Speed comparison", fontsize=36, fontweight="bold")
+    figthrottle.suptitle("Throttle comparison", fontsize=36, fontweight="bold")
+    figbrake.suptitle("Brake comparison", fontsize=36, fontweight="bold")
+    figsteer.suptitle("Steer comparison", fontsize=36, fontweight="bold")
+    figgear.suptitle("Gear comparison", fontsize=36, fontweight="bold")
+    fig.suptitle("Telemetry comparison", fontsize=36, fontweight="bold")
+    # create plot label
+    ax1.set_title("speed", loc="left")
+    ax1.set_xlabel("LapDistance")
+    ax1.set_ylabel("speed")
+    ax2.set_title("throttle", loc="left")
+    ax2.set_xlabel("LapDistance")
+    ax2.set_ylabel("throttle")
+    ax3.set_title("brake", loc="left")
+    ax3.set_xlabel("LapDistance")
+    ax3.set_ylabel("brake")
+    ax4.set_title("steer", loc="left")
+    ax4.set_xlabel("LapDistance")
+    ax4.set_ylabel("steer")
+    ax5.set_title("gear", loc="left")
+    ax5.set_xlabel("LapDistance")
+    ax5.set_ylabel("gear")
+
+    axspeed.set_title("speed", loc="left")
+    axspeed.set_xlabel("LapDistance")
+    axspeed.set_ylabel("speed")
+    axthrottle.set_title("throttle", loc="left")
+    axthrottle.set_xlabel("LapDistance")
+    axthrottle.set_ylabel("throttle")
+    axbrake.set_title("brake", loc="left")
+    axbrake.set_xlabel("LapDistance")
+    axbrake.set_ylabel("brake")
+    axsteer.set_title("steer", loc="left")
+    axsteer.set_xlabel("LapDistance")
+    axsteer.set_ylabel("steer")
+    axgear.set_title("gear", loc="left")
+    axgear.set_xlabel("LapDistance")
+    axgear.set_ylabel("gear")
+
+    # set axis formatter (left)
+    def numberformat(x, pos):
+        return int(x)
+    # ax1.yaxis.set_major_formatter(plt.FuncFormatter(numberformat))
+
+    # reading telemetry data
+    drivers = []
+    laplength = 0
+    maxspeed = 0
+    minspeed = 999
+    for file in files:
+        lapdistance, speed, throttle, brake, steer, gear = [], [], [], [], [], []
+
+        f = open(file, "r")
+        reader = csv.DictReader(f)
+        for row in reader:
+            drivername = row.get("driverName")
+            lapdistance.append(int(row.get("lapDistance")))
+            speed.append(int(row.get("speed")))
+            throttle.append(float(row.get("throttle")))
+            brake.append(float(row.get("brake")))
+            steer.append(float(row.get("steer")))
+            gear.append(int(row.get("gear")))
+        f.close()
+
+        if max(speed) > maxspeed:
+            maxspeed = max(speed)
+        if min(speed) < minspeed:
+            minspeed = min(speed)
+        if max(lapdistance) > laplength:
+            laplength = max(lapdistance)
+
+        drivers.append(drivername)
+
+        ax1.plot(lapdistance, speed, label=drivername, linewidth=2)
+        ax2.plot(lapdistance, throttle, label=drivername, linewidth=2)
+        ax3.plot(lapdistance, brake, label=drivername, linewidth=2)
+        ax4.plot(lapdistance, steer, label=drivername, linewidth=2)
+        ax5.plot(lapdistance, gear, label=drivername, linewidth=2)
+
+        axspeed.plot(lapdistance, speed, label=drivername, linewidth=2)
+        axthrottle.plot(lapdistance, throttle, label=drivername, linewidth=2)
+        axbrake.plot(lapdistance, brake, label=drivername, linewidth=2)
+        axsteer.plot(lapdistance, steer, label=drivername, linewidth=2)
+        axgear.plot(lapdistance, gear, label=drivername, linewidth=2)
+
+    # set axis limits
+    ax1.set_xlim(0, laplength); axspeed.set_xlim(0, laplength)
+    ax2.set_xlim(0, laplength); axthrottle.set_xlim(0, laplength)
+    ax3.set_xlim(0, laplength); axbrake.set_xlim(0, laplength)
+    ax4.set_xlim(0, laplength); axsteer.set_xlim(0, laplength)
+    ax5.set_xlim(0, laplength); axgear.set_xlim(0, laplength)
+    ax1.set_ylim(minspeed-10, maxspeed+10)
+    axspeed.set_ylim(minspeed-10, maxspeed+10)
+    ax2.set_ylim(0, 1.05)
+    axthrottle.set_ylim(0, 1.05)
+    ax3.set_ylim(0, 1.05)
+    axbrake.set_ylim(0, 1.05)
+    ax4.set_ylim(-1.01, 1.01)
+    axsteer.set_ylim(-1.01, 1.01)
+    ax5.set_ylim(0, 9)
+    axgear.set_ylim(0, 9)
+    ax1.grid(True); axspeed.grid(True)
+    ax2.grid(True); axthrottle.grid(True)
+    ax3.grid(True); axbrake.grid(True)
+    ax4.grid(True); axsteer.grid(True)
+    ax5.grid(True); axgear.grid(True)
+    ax1.legend(frameon=False); axspeed.legend(frameon=False)
+    ax2.legend(frameon=False); axthrottle.legend(frameon=False)
+    ax3.legend(frameon=False); axbrake.legend(frameon=False)
+    ax4.legend(frameon=False); axsteer.legend(frameon=False)
+    ax5.legend(frameon=False); axgear.legend(frameon=False)
+
+    folder = 'Telemerty ('
+    for i in range(0, len(drivers)-1):
+        folder += drivers[i] + " vs "
+    folder += drivers[-1] + ")"
+    os.system(f'if not exist "{imageoutdir}{folder}" mkdir "{imageoutdir}{folder}"')
+
+    if outdir == None:
+        fig.savefig(f'{imageoutdir}{folder}/full telemetry.png', format="png")
+        figspeed.savefig(f'{imageoutdir}{folder}/speed.png', format="png")
+        figthrottle.savefig(f'{imageoutdir}{folder}/throttle.png', format="png")
+        figbrake.savefig(f'{imageoutdir}{folder}/brake.png', format="png")
+        figsteer.savefig(f'{imageoutdir}{folder}/steer.png', format="png")
+        figgear.savefig(f'{imageoutdir}{folder}/gear.png', format="png")
+        print(f'Telemetry comparison graph saved to "{imageoutdir}{folder}"')
+    else:
+        fig.savefig(f'{outdir}{folder}/full telemetry.png', format="png")
+        figspeed.savefig(f'{outdir}{folder}/speed.png', format="png")
+        figthrottle.savefig(f'{outdir}{folder}/throttle.png', format="png")
+        figbrake.savefig(f'{outdir}{folder}/brake.png', format="png")
+        figsteer.savefig(f'{outdir}{folder}/steer.png', format="png")
+        figgear.savefig(f'{outdir}{folder}/gear.png', format="png")
+        print(f'Telemetry comparison graph saved to "{outdir}{folder}"')
+
 
 
 
@@ -1058,13 +1258,284 @@ def getTyrewearImage_ONLINE(db:mysql.connector.MySQLConnection,
 
 
 
+
+def getTeleImage_ONLINE(db:mysql.connector.MySQLConnection,
+                        sessionid1:int=None, sessionid2:int=None,
+                        ipdec:int=None, outdir:str=None):
+    cursor = db.cursor()
+
+    if sessionid1 == None:
+        sessionid1, sessionid2 = func.asksessionid()
+    elif sessionid1 != None and sessionid2 == None:
+        sessionid2 = sessionid1
+
+    if sessionid1 == None or sessionid2 == None:
+        query = "SELECT MAX(beginUnixTime) FROM SessionList;"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        sessionid1 = result[0][0]
+        sessionid2 = result[0][0]
+    elif sessionid1 == "Nosession" and sessionid2 == "Nosession":
+        return None
+
+    if ipdec == None:
+        ipdec = func.checkIPsrc(db, sessionid2)
+    if ipdec == None:
+        print("No/Wrong IP source selected......")
+        return None
+    
+    print(func.delimiter_string(f'Telemetry comparison ({sessionid2})', 60), end="\n\n")
+
+
+    # fetch session telemetry data
+    query = f'SELECT beginUnixTime, ipDecimal, curTime, carIndex, driverName, currentLapNum, \
+                     lapDistance, currentLapTimeInStr, speed, steer, throttle, brake, gear, \
+                     engineRPM, ersDeployMode, worldPositionX, worldPositionY, worldPositionZ \
+            FROM LapDetails \
+            WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
+              AND driverName in (SELECT driverName FROM Participants \
+                                 WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
+                                 AND aiControlled = 0) \
+            ORDER BY carIndex ASC, currentLapNum ASC, LapDistance ASC;'
+    cursor.execute(query)
+    result = cursor.fetchall()
+    
+    
+    # catagorize telemetry data by driver
+    telemetrydata = {}
+    for record in result:
+        try:
+            telemetrydata[record[3]].append(record)
+        except KeyError:
+            telemetrydata[record[3]] = [record]
+    
+
+    # fastest lapdata
+    query = f'SELECT beginUnixTime, curTime, carIndex, driverName, bestLapTimeLapNum, bestLapTimeInStr \
+            FROM BestLap \
+            WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
+                AND driverName in (SELECT driverName FROM Participants  \
+                                   WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
+                                     AND aiControlled = 0) \
+                AND ipDecimal = {ipdec} \
+                AND curUnixTime = (SELECT u FROM (SELECT MAX(curUnixTime) u, beginUnixTime id \
+                                                  FROM BestLap GROUP BY beginUnixTime) t \
+                                    WHERE id >= "{sessionid1}" AND id <= "{sessionid2}") \
+            ORDER BY CASE bestLapTimeInMS \
+                    WHEN 0 THEN 2 \
+                    ELSE 1 \
+                END, bestLapTimeInMS ASC;'
+    cursor.execute(query)
+    result = cursor.fetchall()
+
+    fldict = {}
+    for record in result:
+        fldict[record[3]] = record[4]
+    
+
+    # ask user for which drivers in the data pool (for comparison)
+    print(f'{"Index":<8}{"Driver":<20}')
+    for index in sorted(telemetrydata.keys()):
+        print(f'{index:<8}{telemetrydata[index][0][4]}')
+    print()
+    choices = input("Enter the drivers selected (seperate by comma): ")
+    if choices == "q" or choices == "Q":
+        return None
+    
+    choices = choices.split(",")
+    driverselect = []
+    for choice in choices:
+        try:
+            index = int(choice.replace(" ", ""))
+            telemetrydata[index]
+            driverselect.append(index)
+        except (ValueError, KeyError):
+            continue
+    
+
+    # create plot
+    length = settings["image"]["telemetry"]["size"]["length"]
+    height = settings["image"]["telemetry"]["size"]["height"]
+    figspeed, axspeed = plt.subplots(figsize=(length/100, height/100))
+    figthrottle, axthrottle = plt.subplots(figsize=(length/100, height/100))
+    figbrake, axbrake = plt.subplots(figsize=(length/100, height/100))
+    figsteer, axsteer = plt.subplots(figsize=(length/100, height/100))
+    figgear, axgear = plt.subplots(figsize=(length/100, height/100))
+
+    # full telemetry
+    fulllength = settings["image"]["fulltele"]["size"]["length"]
+    fullheight = settings["image"]["fulltele"]["size"]["height"]
+    fig, axs = plt.subplots(5, figsize=(fulllength/100, fullheight/100))
+    ax1:plt.Axes = axs[0]       # speed
+    ax2:plt.Axes = axs[1]       # throttle
+    ax3:plt.Axes = axs[2]       # brake
+    ax4:plt.Axes = axs[3]       # steer
+    ax5:plt.Axes = axs[4]       # gear
+
+    # set axis interval
+    ax1.xaxis.set_major_locator(plt.MultipleLocator(200));  axspeed.xaxis.set_major_locator(plt.MultipleLocator(200))
+    ax2.xaxis.set_major_locator(plt.MultipleLocator(200));  axthrottle.xaxis.set_major_locator(plt.MultipleLocator(200))
+    ax3.xaxis.set_major_locator(plt.MultipleLocator(200));  axbrake.xaxis.set_major_locator(plt.MultipleLocator(200))
+    ax4.xaxis.set_major_locator(plt.MultipleLocator(200));  axsteer.xaxis.set_major_locator(plt.MultipleLocator(200))
+    ax5.xaxis.set_major_locator(plt.MultipleLocator(200));  axgear.xaxis.set_major_locator(plt.MultipleLocator(200))
+    
+    ax1.yaxis.set_major_locator(plt.MultipleLocator(10));   axspeed.yaxis.set_major_locator(plt.MultipleLocator(10))
+    ax2.yaxis.set_major_locator(plt.MultipleLocator(0.1));  axthrottle.yaxis.set_major_locator(plt.MultipleLocator(0.1))
+    ax3.yaxis.set_major_locator(plt.MultipleLocator(0.1));  axbrake.yaxis.set_major_locator(plt.MultipleLocator(0.1))
+    ax4.yaxis.set_major_locator(plt.MultipleLocator(0.1));  axsteer.yaxis.set_major_locator(plt.MultipleLocator(0.1))
+    ax5.yaxis.set_major_locator(plt.MultipleLocator(1));    axgear.yaxis.set_major_locator(plt.MultipleLocator(1))
+
+
+    # create plot title
+    figspeed.suptitle("Speed comparison", fontsize=36, fontweight="bold")
+    figthrottle.suptitle("Throttle comparison", fontsize=36, fontweight="bold")
+    figbrake.suptitle("Brake comparison", fontsize=36, fontweight="bold")
+    figsteer.suptitle("Steer comparison", fontsize=36, fontweight="bold")
+    figgear.suptitle("Gear comparison", fontsize=36, fontweight="bold")
+    fig.suptitle("Telemetry comparison", fontsize=36, fontweight="bold")
+    # create plot label
+    ax1.set_title("speed", loc="left")
+    ax1.set_xlabel("LapDistance")
+    ax1.set_ylabel("speed")
+    ax2.set_title("throttle", loc="left")
+    ax2.set_xlabel("LapDistance")
+    ax2.set_ylabel("throttle")
+    ax3.set_title("brake", loc="left")
+    ax3.set_xlabel("LapDistance")
+    ax3.set_ylabel("brake")
+    ax4.set_title("steer", loc="left")
+    ax4.set_xlabel("LapDistance")
+    ax4.set_ylabel("steer")
+    ax5.set_title("gear", loc="left")
+    ax5.set_xlabel("LapDistance")
+    ax5.set_ylabel("gear")
+
+    axspeed.set_title("speed", loc="left")
+    axspeed.set_xlabel("LapDistance")
+    axspeed.set_ylabel("speed")
+    axthrottle.set_title("throttle", loc="left")
+    axthrottle.set_xlabel("LapDistance")
+    axthrottle.set_ylabel("throttle")
+    axbrake.set_title("brake", loc="left")
+    axbrake.set_xlabel("LapDistance")
+    axbrake.set_ylabel("brake")
+    axsteer.set_title("steer", loc="left")
+    axsteer.set_xlabel("LapDistance")
+    axsteer.set_ylabel("steer")
+    axgear.set_title("gear", loc="left")
+    axgear.set_xlabel("LapDistance")
+    axgear.set_ylabel("gear")
+
+    # set axis formatter (left)
+    def numberformat(x, pos):
+        return int(x)
+    # ax1.yaxis.set_major_formatter(plt.FuncFormatter(numberformat))
+
+    # reading telemetry data
+    drivers = []
+    laplength = 0
+    maxspeed = 0
+    minspeed = 999
+    for index in driverselect:
+        drivername = telemetrydata[index][0][4]
+        fllap = fldict[drivername]
+        lapdistance, speed, throttle, brake, steer, gear = [], [], [], [], [], []
+
+        for row in sorted(telemetrydata[index], key=lambda x:x[6]):
+            if int(row[5]) != fllap:
+                continue
+            lapdistance.append(int(row[6]))
+            speed.append(int(row[8]))
+            throttle.append(float(row[10]))
+            brake.append(float(row[11]))
+            steer.append(float(row[9]))
+            gear.append(int(row[12]))
+
+
+        if max(speed) > maxspeed:
+            maxspeed = max(speed)
+        if min(speed) < minspeed:
+            minspeed = min(speed)
+        if max(lapdistance) > laplength:
+            laplength = max(lapdistance)
+
+        drivers.append(drivername)
+
+        ax1.plot(lapdistance, speed, label=drivername, linewidth=2)
+        ax2.plot(lapdistance, throttle, label=drivername, linewidth=2)
+        ax3.plot(lapdistance, brake, label=drivername, linewidth=2)
+        ax4.plot(lapdistance, steer, label=drivername, linewidth=2)
+        ax5.plot(lapdistance, gear, label=drivername, linewidth=2)
+
+        axspeed.plot(lapdistance, speed, label=drivername, linewidth=2)
+        axthrottle.plot(lapdistance, throttle, label=drivername, linewidth=2)
+        axbrake.plot(lapdistance, brake, label=drivername, linewidth=2)
+        axsteer.plot(lapdistance, steer, label=drivername, linewidth=2)
+        axgear.plot(lapdistance, gear, label=drivername, linewidth=2)
+
+    # set axis limits
+    ax1.set_xlim(0, laplength); axspeed.set_xlim(0, laplength)
+    ax2.set_xlim(0, laplength); axthrottle.set_xlim(0, laplength)
+    ax3.set_xlim(0, laplength); axbrake.set_xlim(0, laplength)
+    ax4.set_xlim(0, laplength); axsteer.set_xlim(0, laplength)
+    ax5.set_xlim(0, laplength); axgear.set_xlim(0, laplength)
+    ax1.set_ylim(minspeed-10, maxspeed+10)
+    axspeed.set_ylim(minspeed-10, maxspeed+10)
+    ax2.set_ylim(0, 1.05)
+    axthrottle.set_ylim(0, 1.05)
+    ax3.set_ylim(0, 1.05)
+    axbrake.set_ylim(0, 1.05)
+    ax4.set_ylim(-1.01, 1.01)
+    axsteer.set_ylim(-1.01, 1.01)
+    ax5.set_ylim(0, 9)
+    axgear.set_ylim(0, 9)
+    ax1.grid(True); axspeed.grid(True)
+    ax2.grid(True); axthrottle.grid(True)
+    ax3.grid(True); axbrake.grid(True)
+    ax4.grid(True); axsteer.grid(True)
+    ax5.grid(True); axgear.grid(True)
+    ax1.legend(frameon=False); axspeed.legend(frameon=False)
+    ax2.legend(frameon=False); axthrottle.legend(frameon=False)
+    ax3.legend(frameon=False); axbrake.legend(frameon=False)
+    ax4.legend(frameon=False); axsteer.legend(frameon=False)
+    ax5.legend(frameon=False); axgear.legend(frameon=False)
+
+    folder = 'Telemerty ('
+    for i in range(0, len(drivers)-1):
+        folder += drivers[i] + " vs "
+    folder += drivers[-1] + ")"
+    os.system(f'if not exist "{imageoutdir}{folder}" mkdir "{imageoutdir}{folder}"')
+
+    if outdir == None:
+        fig.savefig(f'{imageoutdir}{folder}/full telemetry.png', format="png")
+        figspeed.savefig(f'{imageoutdir}{folder}/speed.png', format="png")
+        figthrottle.savefig(f'{imageoutdir}{folder}/throttle.png', format="png")
+        figbrake.savefig(f'{imageoutdir}{folder}/brake.png', format="png")
+        figsteer.savefig(f'{imageoutdir}{folder}/steer.png', format="png")
+        figgear.savefig(f'{imageoutdir}{folder}/gear.png', format="png")
+        print(f'Telemetry comparison graph saved to "{imageoutdir}{folder}"')
+    else:
+        fig.savefig(f'{outdir}{folder}/full telemetry.png', format="png")
+        figspeed.savefig(f'{outdir}{folder}/speed.png', format="png")
+        figthrottle.savefig(f'{outdir}{folder}/throttle.png', format="png")
+        figbrake.savefig(f'{outdir}{folder}/brake.png', format="png")
+        figsteer.savefig(f'{outdir}{folder}/steer.png', format="png")
+        figgear.savefig(f'{outdir}{folder}/gear.png', format="png")
+        print(f'Telemetry comparison graph saved to "{outdir}{folder}"')
+
+
+
+
+
 # ------ testing use case ------ #
 # getPositionImage()
 # getLaptimeImage()
 # getTyrewearImage()
 # getFastestlapImage()
+# getTeleImage()
 
 # getPositionImage_ONLINE(dbconnect.connect_with_conf("server.json", "db"))
 # getFastestlapImage_ONLINE(dbconnect.connect_with_conf("server.json", "db"))
 # getLaptimeImage_ONLINE(dbconnect.connect_with_conf("server.json", "db"))
 # getTyrewearImage_ONLINE(dbconnect.connect_with_conf("server.json", "db"))
+# getTeleImage_ONLINE(dbconnect.connect_with_conf("server.json", "db"), 1687608241)

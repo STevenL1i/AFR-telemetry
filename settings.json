@@ -21,6 +21,12 @@
         },
         "tyrewear": {
             "size": {"length": 3840, "height": 2160}
+        },
+        "telemetry": {
+            "size": {"length": 3840, "height": 1080}
+        },
+        "fulltele": {
+            "size": {"length": 3840, "height": 5400}
         }
     }
 }

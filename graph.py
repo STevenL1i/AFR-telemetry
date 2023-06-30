@@ -27,7 +27,7 @@ def main(mode:str):
         "fastest lap",              # standby
         "lap time",                 # passed
         "tyre wear",                # passed
-        #"telemetry",               # waiting for database update
+        "telemetry",               # waiting for database update
     ]
 
     while True:
@@ -91,6 +91,16 @@ def main(mode:str):
                     image.getTyrewearImage_ONLINE(db)
                 input("press enter back to main menu......")
                 print()
+            
+
+
+            elif choice == "6" or choice.replace(" ","").lower() == "telemetry":
+                if mode == "OFFLINE":
+                    image.getTeleImage()
+                else:
+                    image.getTeleImage_ONLINE(db)
+                input("press enter back to main menu......")
+                print()
 
 
 
@@ -105,6 +115,7 @@ def main(mode:str):
                 print(f'{"fastestlap":<25}{"Get fastest lap summary of given fastestlap data"}')
                 print(f'{"laptime":<25}{"Get lap time comparison of given laptime data"}')
                 print(f'{"tyrewear":<25}{"Get tyre wear comparison of given tyre wear data"}')
+                print(f'{"telemetry":<25}{"Get telemetry comparison of given tyre wear data"}')
                 
                 print()
                 input("press enter back to main menu......")

@@ -91,7 +91,7 @@ def getLapdata(db:mysql.connector.MySQLConnection,
         lapdata = laptimedata[driver]
 
         # making csv file
-        csvfile = open(f'{dataoutdir}{folder}/{lapdata[0][3]}.csv', "w", newline="")
+        csvfile = open(f'{dataoutdir}{folder}/{lapdata[0][3]}.csv', "w", newline="", encoding='utf-8')
         header = ["Lap", "driverName", "sector1", "sector2", "sector3", "Laptime", "Tyre", "TyreLapUsed"]
         writer = csv.DictWriter(csvfile, fieldnames=header)
         writer.writeheader()
@@ -146,8 +146,9 @@ def getLapdata(db:mysql.connector.MySQLConnection,
                                    WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
                                      AND aiControlled = 0) \
                 AND ipDecimal = {ipdec} \
-                AND curUnixTime = (SELECT MAX(curUnixTime) FROM BestLap \
-                                   WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}")\
+                AND curUnixTime = (SELECT u FROM (SELECT MAX(curUnixTime) u, beginUnixTime id \
+                                                  FROM BestLap GROUP BY beginUnixTime) t \
+                                    WHERE id >= "{sessionid1}" AND id <= "{sessionid2}") \
             ORDER BY CASE bestLapTimeInMS \
                     WHEN 0 THEN 2 \
                     ELSE 1 \
@@ -156,7 +157,7 @@ def getLapdata(db:mysql.connector.MySQLConnection,
     result = cursor.fetchall()
 
     # making csv file
-    csvfile = open(f'{dataoutdir}{folder}/fastest lap.csv', "w", newline="")
+    csvfile = open(f'{dataoutdir}{folder}/fastest lap.csv', "w", newline="", encoding='utf-8')
     header = ["LapNum", "driverName", "sector1", "sector2", "sector3", "Laptime", "Tyre", "TyreLapUsed"]
     writer = csv.DictWriter(csvfile, fieldnames=header)
     writer.writeheader()
@@ -236,15 +237,15 @@ def getTeledata(db:mysql.connector.MySQLConnection,
 
 
     # fetch session telemetry data
-    query = f'SELECT beginUnixTime, frameIdentifier, curTime, carIndex, driverName, currentLapNum, \
-                     lapDistance, currentLapTimeInMS, speed, throttle, brake, gear, engineRPM, \
-                     worldPositionX, worldPositionY, worldPositionZ \
-            FROM CarDetails \
+    query = f'SELECT beginUnixTime, ipDecimal, curTime, carIndex, driverName, currentLapNum, \
+                     lapDistance, currentLapTimeInStr, speed, steer, throttle, brake, gear, \
+                     engineRPM, ersDeployMode, worldPositionX, worldPositionY, worldPositionZ \
+            FROM LapDetails \
             WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
               AND driverName in (SELECT driverName FROM Participants \
                                  WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
                                  AND aiControlled = 0) \
-            ORDER BY curTime ASC, frameIdentifier ASC, carIndex ASC;'
+            ORDER BY carIndex ASC, currentLapNum ASC, LapDistance ASC;'
     cursor.execute(query)
     result = cursor.fetchall()
     
@@ -270,10 +271,10 @@ def getTeledata(db:mysql.connector.MySQLConnection,
         teledata = telemetrydata[driver]
 
         # making csv file
-        csvfile = open(f'{dataoutdir}{folder}/{teledata[0][4]}.csv', "w", newline="")
+        csvfile = open(f'{dataoutdir}{folder}/{teledata[0][4]}.csv', "w", newline="", encoding='utf-8')
         header = ["frameIdentifier", "curTime", "driverName", "currentLapNum",
-                  "lapDistance", "currentLapTime", "speed", "throttle", "brake", "gear", "engineRPM",
-                  "worldPositionX", "worldPositionY", "worldPositionZ"]
+                  "lapDistance", "currentLapTime", "speed", "steer", "throttle", "brake", "gear",
+                  "engineRPM", "ersDeployMode", "worldPositionX", "worldPositionY", "worldPositionZ"]
         writer = csv.DictWriter(csvfile, fieldnames=header)
         writer.writeheader()
 
@@ -281,15 +282,96 @@ def getTeledata(db:mysql.connector.MySQLConnection,
         # skip
 
         print(f'Writing telemetry data: {teledata[0][4]}......')
-        for data in sorted(teledata, key=lambda x: (x[2], x[1])):
+        for data in sorted(teledata, key=lambda x: (x[5], x[6])):
             data = {"frameIdentifier": data[1], "curTime": data[2], "driverName": data[4],
                     "currentLapNum": data[5], "lapDistance": data[6], "currentLapTime": data[7],
-                    "speed": data[8], "throttle": data[9], "brake": data[10], "gear": data[11], "engineRPM": data[12],
-                    "worldPositionX": data[13], "worldPositionY": data[14], "worldPositionZ": data[15]}
+                    "speed": data[8], "steer": data[9], "throttle": data[10], "brake": data[11], "gear": data[12], 
+                    "engineRPM": data[13], "ersDeployMode": data[14],
+                    "worldPositionX": data[15], "worldPositionY": data[16], "worldPositionZ": data[17]}
             writer.writerow(data)
         
         csvfile.close()
     print()
+    
+
+    # output fastest lap telemetry
+    # fastest lapdata
+    query = f'SELECT beginUnixTime, curTime, carIndex, driverName, bestLapTimeLapNum, bestLapTimeInStr \
+            FROM BestLap \
+            WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
+                AND driverName in (SELECT driverName FROM Participants  \
+                                   WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
+                                     AND aiControlled = 0) \
+                AND ipDecimal = {ipdec} \
+                AND curUnixTime = (SELECT u FROM (SELECT MAX(curUnixTime) u, beginUnixTime id \
+                                                  FROM BestLap GROUP BY beginUnixTime) t \
+                                    WHERE id >= "{sessionid1}" AND id <= "{sessionid2}") \
+            ORDER BY CASE bestLapTimeInMS \
+                    WHEN 0 THEN 2 \
+                    ELSE 1 \
+                END, bestLapTimeInMS ASC;'
+    cursor.execute(query)
+    result = cursor.fetchall()
+
+    # making output folder
+    folder = f'Fastestlap Telemetry ({sessionid2})'
+    os.system(f'if not exist "{dataoutdir}{folder}" mkdir "{dataoutdir}{folder}"')
+
+    for driver in result:
+        carindex = driver[2]
+        fllapnum = driver[4]
+        teledata = telemetrydata[carindex]
+
+        # making csv file
+        csvfile = open(f'{dataoutdir}{folder}/{teledata[0][4]}.csv', "w", newline="", encoding='utf-8')
+        header = ["frameIdentifier", "curTime", "driverName", "currentLapNum",
+                  "lapDistance", "currentLapTime", "speed", "steer", "throttle", "brake", "gear",
+                  "engineRPM", "ersDeployMode", "worldPositionX", "worldPositionY", "worldPositionZ"]
+        writer = csv.DictWriter(csvfile, fieldnames=header)
+        writer.writeheader()
+
+        print(f'Writing fastestlap telemetry data: {teledata[0][4]}......')
+        for data in sorted(teledata, key=lambda x: (x[5], x[6])):
+            data = {"frameIdentifier": data[1], "curTime": data[2], "driverName": data[4],
+                    "currentLapNum": data[5], "lapDistance": data[6], "currentLapTime": data[7],
+                    "speed": data[8], "steer": data[9], "throttle": data[10], "brake": data[11], "gear": data[12], 
+                    "engineRPM": data[13], "ersDeployMode": data[14],
+                    "worldPositionX": data[15], "worldPositionY": data[16], "worldPositionZ": data[17]}
+            if data["currentLapNum"] == fllapnum:
+                writer.writerow(data)
+        
+        csvfile.close()
+    print()
+
+
+
+
+def getTeleFL(db:mysql.connector.MySQLConnection,
+            sessionid1:int=None, sessionid2:int=None, ipdec:int=None):
+    cursor = db.cursor()
+
+    if sessionid1 == None:
+        sessionid1, sessionid2 = func.asksessionid()
+    elif sessionid1 != None and sessionid2 == None:
+        sessionid2 = sessionid1
+
+    if sessionid1 == None or sessionid2 == None:
+        query = "SELECT MAX(beginUnixTime) FROM SessionList;"
+        cursor.execute(query)
+        result = cursor.fetchall()
+        sessionid1 = result[0][0]
+        sessionid2 = result[0][0]
+    elif sessionid1 == "Nosession" and sessionid2 == "Nosession":
+        return None
+    
+    if ipdec == None:
+        ipdec = func.checkIPsrc(db, sessionid2)
+    if ipdec == None:
+        print("No/Wrong IP source selected......")
+        return None
+    
+    print(func.delimiter_string(f'FastestLap tele data ({sessionid2})', 60), end="\n\n")
+
 
 
 
@@ -371,7 +453,7 @@ def getPosdata(db:mysql.connector.MySQLConnection,
         driverposdata = positiondata[driver]
 
         # making csv file
-        csvfile = open(f'{dataoutdir}{folder}/{driver}.csv', "w", newline="")
+        csvfile = open(f'{dataoutdir}{folder}/{driver}.csv', "w", newline="", encoding='utf-8')
         header = ["driverName", "lapNum", "position"]
         writer = csv.DictWriter(csvfile, fieldnames=header)
         writer.writeheader()
@@ -462,7 +544,7 @@ def getTyretempdata(db:mysql.connector.MySQLConnection,
         tyredata = tyretempdata[driver]
 
         # making csv file
-        csvfile = open(f'{dataoutdir}{folder}/{tyredata[0][3]}.csv', "w", newline="")
+        csvfile = open(f'{dataoutdir}{folder}/{tyredata[0][3]}.csv', "w", newline="", encoding='utf-8')
         header = ["Lap", "driverName", "LapDistance",
                   "SurfaceFL", "SurfaceFR", "SurfaceRL", "SurfaceRR",
                   "InnerFL", "InnerFR", "InnerRL", "InnerRR"]
@@ -587,7 +669,7 @@ def getTyreweardata(db:mysql.connector.MySQLConnection,
         tyredata = tyreweardata[driver]
 
         # making csv file
-        csvfile = open(f'{dataoutdir}{folder}/{tyredata[0][3]}.csv', "w", newline="")
+        csvfile = open(f'{dataoutdir}{folder}/{tyredata[0][3]}.csv', "w", newline="", encoding='utf-8')
         header = ["Lap", "driverName", "FL", "FR", "RL", "RR"]
         writer = csv.DictWriter(csvfile, fieldnames=header)
         writer.writeheader()
@@ -679,7 +761,7 @@ def getFinalClassification(db:mysql.connector.MySQLConnection,
 
 
     # making csv file
-    csvfile = open(f'{dataoutdir}{folder}/FinalClassification_{sessionid2}.csv', "w", newline="")
+    csvfile = open(f'{dataoutdir}{folder}/FinalClassification_{sessionid2}.csv', "w", newline="", encoding='utf-8')
     header = ["position", "driverName", "numLaps", "grid", "pits",
               "bestlap", "totaltime", "gap", "numPen", "penalty", "tyreStint"]
     writer = csv.DictWriter(csvfile, fieldnames=header)
@@ -785,7 +867,7 @@ def getRaceDirector(db:mysql.connector.MySQLConnection,
 
     
     # making csv file
-    csvfile = open(f'{dataoutdir}{folder}/RaceDirector_{sessionid2}.csv', "w", newline="")
+    csvfile = open(f'{dataoutdir}{folder}/RaceDirector_{sessionid2}.csv', "w", newline="", encoding='utf-8')
     header = ["Lap", "driverName", "driverInvolved", "PenaltyType", "PenaltyDescriptions",
               "timeGained", "placeGained"]
     writer = csv.DictWriter(csvfile, fieldnames=header)
@@ -886,7 +968,7 @@ def getWeatherReport(db:mysql.connector.MySQLConnection,
 
 
     # making csv file
-    csvfile = open(f'{dataoutdir}{folder}/WeatherReport_{sessionid2}.csv', "w", newline="")
+    csvfile = open(f'{dataoutdir}{folder}/WeatherReport_{sessionid2}.csv', "w", newline="", encoding='utf-8')
     header = ["Time", "timeOffset", "Session", "Weather", "RainPct.", "TrackTemp"]
     writer = csv.DictWriter(csvfile, fieldnames=header)
     writer.writeheader()
