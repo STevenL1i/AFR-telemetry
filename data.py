@@ -245,7 +245,7 @@ def getTeledata(db:mysql.connector.MySQLConnection,
               AND driverName in (SELECT driverName FROM Participants \
                                  WHERE beginUnixTime >= "{sessionid1}" AND beginUnixTime <= "{sessionid2}" \
                                  AND aiControlled = 0) \
-            ORDER BY carIndex ASC, currentLapNum ASC, LapDistance ASC;'
+            ORDER BY carIndex ASC, curUnixTime ASC, LapDistance ASC;'
     cursor.execute(query)
     result = cursor.fetchall()
     
@@ -282,7 +282,7 @@ def getTeledata(db:mysql.connector.MySQLConnection,
         # skip
 
         print(f'Writing telemetry data: {teledata[0][4]}......')
-        for data in sorted(teledata, key=lambda x: (x[5], x[6])):
+        for data in sorted(teledata, key=lambda x: (x[2], x[6])):
             data = {"frameIdentifier": data[1], "curTime": data[2], "driverName": data[4],
                     "currentLapNum": data[5], "lapDistance": data[6], "currentLapTime": data[7],
                     "speed": data[8], "steer": data[9], "throttle": data[10], "brake": data[11], "gear": data[12], 
@@ -320,7 +320,10 @@ def getTeledata(db:mysql.connector.MySQLConnection,
     for driver in result:
         carindex = driver[2]
         fllapnum = driver[4]
-        teledata = telemetrydata[carindex]
+        try:
+            teledata = telemetrydata[carindex]
+        except KeyError:
+            continue
 
         # making csv file
         csvfile = open(f'{dataoutdir}{folder}/{teledata[0][4]}.csv', "w", newline="", encoding='utf-8')
@@ -331,7 +334,7 @@ def getTeledata(db:mysql.connector.MySQLConnection,
         writer.writeheader()
 
         print(f'Writing fastestlap telemetry data: {teledata[0][4]}......')
-        for data in sorted(teledata, key=lambda x: (x[5], x[6])):
+        for data in sorted(teledata, key=lambda x: (x[2], x[6])):
             data = {"frameIdentifier": data[1], "curTime": data[2], "driverName": data[4],
                     "currentLapNum": data[5], "lapDistance": data[6], "currentLapTime": data[7],
                     "speed": data[8], "steer": data[9], "throttle": data[10], "brake": data[11], "gear": data[12], 

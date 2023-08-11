@@ -306,7 +306,7 @@ def getLaptimeImage(files:tuple=None, outdir:str=None):
             drivername = row.get("driverName")
             laptime_str = row.get("Laptime")
             if laptime_str.replace(" ","") == "":
-                    continue
+                continue
             lap.append(row.get("Lap"))
             
             try:
@@ -517,6 +517,12 @@ def getTeleImage(files:tuple=None, outdir:str=None):
     ax4:plt.Axes = axs[3]       # steer
     ax5:plt.Axes = axs[4]       # gear
 
+    # racing line
+    rllength = settings["image"]["racingline"]["size"]["length"]
+    rlheight = settings["image"]["racingline"]["size"]["height"]
+    figrl, axrl = plt.subplots(figsize=(rllength/100, rlheight/100))
+
+
     # set axis interval
     ax1.xaxis.set_major_locator(plt.MultipleLocator(200));  axspeed.xaxis.set_major_locator(plt.MultipleLocator(200))
     ax2.xaxis.set_major_locator(plt.MultipleLocator(200));  axthrottle.xaxis.set_major_locator(plt.MultipleLocator(200))
@@ -538,6 +544,7 @@ def getTeleImage(files:tuple=None, outdir:str=None):
     figsteer.suptitle("Steer comparison", fontsize=36, fontweight="bold")
     figgear.suptitle("Gear comparison", fontsize=36, fontweight="bold")
     fig.suptitle("Telemetry comparison", fontsize=36, fontweight="bold")
+    figrl.suptitle("Racing line comparison\n", fontsize=36, fontweight="bold")
     # create plot label
     ax1.set_title("speed", loc="left")
     ax1.set_xlabel("LapDistance")
@@ -570,6 +577,10 @@ def getTeleImage(files:tuple=None, outdir:str=None):
     axgear.set_title("gear", loc="left")
     axgear.set_xlabel("LapDistance")
     axgear.set_ylabel("gear")
+    
+    axrl.set_title("Racing line", loc="left")
+    axrl.set_xlabel("x-coor")
+    axrl.set_ylabel("y-coor")
 
     # set axis formatter (left)
     def numberformat(x, pos):
@@ -583,6 +594,7 @@ def getTeleImage(files:tuple=None, outdir:str=None):
     minspeed = 999
     for file in files:
         lapdistance, speed, throttle, brake, steer, gear = [], [], [], [], [], []
+        xcoor, ycoor = [], []
 
         f = open(file, "r")
         reader = csv.DictReader(f)
@@ -594,6 +606,8 @@ def getTeleImage(files:tuple=None, outdir:str=None):
             brake.append(float(row.get("brake")))
             steer.append(float(row.get("steer")))
             gear.append(int(row.get("gear")))
+            xcoor.append(float(row.get("worldPositionX")))
+            ycoor.append(-float(row.get("worldPositionZ")))
         f.close()
 
         if max(speed) > maxspeed:
@@ -616,6 +630,8 @@ def getTeleImage(files:tuple=None, outdir:str=None):
         axbrake.plot(lapdistance, brake, label=drivername, linewidth=2)
         axsteer.plot(lapdistance, steer, label=drivername, linewidth=2)
         axgear.plot(lapdistance, gear, label=drivername, linewidth=2)
+
+        axrl.plot(xcoor, ycoor, label=drivername)
 
     # set axis limits
     ax1.set_xlim(0, laplength); axspeed.set_xlim(0, laplength)
@@ -643,6 +659,8 @@ def getTeleImage(files:tuple=None, outdir:str=None):
     ax3.legend(frameon=False); axbrake.legend(frameon=False)
     ax4.legend(frameon=False); axsteer.legend(frameon=False)
     ax5.legend(frameon=False); axgear.legend(frameon=False)
+    axrl.grid(True)
+    axrl.legend(frameon=False)
 
     folder = 'Telemerty ('
     for i in range(0, len(drivers)-1):
@@ -657,6 +675,7 @@ def getTeleImage(files:tuple=None, outdir:str=None):
         figbrake.savefig(f'{imageoutdir}{folder}/brake.png', format="png")
         figsteer.savefig(f'{imageoutdir}{folder}/steer.png', format="png")
         figgear.savefig(f'{imageoutdir}{folder}/gear.png', format="png")
+        figrl.savefig(f'{imageoutdir}{folder}/racingline.png', format="png")
         print(f'Telemetry comparison graph saved to "{imageoutdir}{folder}"')
     else:
         fig.savefig(f'{outdir}{folder}/full telemetry.png', format="png")
@@ -665,7 +684,72 @@ def getTeleImage(files:tuple=None, outdir:str=None):
         figbrake.savefig(f'{outdir}{folder}/brake.png', format="png")
         figsteer.savefig(f'{outdir}{folder}/steer.png', format="png")
         figgear.savefig(f'{outdir}{folder}/gear.png', format="png")
+        figrl.savefig(f'{outdir}{folder}/racingline.png', format="png")
         print(f'Telemetry comparison graph saved to "{outdir}{folder}"')
+    
+
+    if len(files) != 2:
+        return None
+    
+    # create plot
+    length = settings["image"]["telemetry"]["size"]["length"]
+    height = settings["image"]["telemetry"]["size"]["height"]
+    fig, ax = plt.subplots(figsize=(length/100, height/100))
+    ax.xaxis.set_major_locator(plt.MultipleLocator(200))
+    ax.yaxis.set_major_locator(plt.MultipleLocator(0.1))
+
+    # create plot title
+    # later
+    # create plot label
+    ax.set_title("delta", loc="left")
+    ax.set_xlabel("LapDistance")
+    ax.set_ylabel("delta")
+
+    # reading telemetry data
+    drivers = {}
+    laplength = 0
+    lapdistance = []
+    for file in files:
+        distance, curlaptime = [], []
+
+        f = open(file, "r")
+        reader = csv.DictReader(f)
+        for row in reader:
+            drivername = row.get("driverName")
+            distance.append(int(row.get("lapDistance")))
+            curlt = row.get("currentLapTime")
+            try:
+                curlt = float(curlt)
+            except ValueError:
+                curlt = func.laptime_To_second(curlt)
+            curlaptime.append(curlt)
+        lapdistance = distance
+        f.close()
+
+        drivers[drivername] = curlaptime
+    
+    driver1 = list(drivers.keys())[0]
+    driver2 = list(drivers.keys())[1]
+    delta = []
+    for i in range(len(lapdistance)):
+        curdelta = drivers[driver1][i] - drivers[driver2][i]
+        delta.append(curdelta)
+    
+    ax.plot(lapdistance, delta)
+
+    # set axis limits
+    ax.set_xlim(0, max(lapdistance))
+    
+    fig.suptitle(f'{driver1} - {driver2} delta', fontsize=36, fontweight="bold")
+    ax.grid(True)
+
+    if outdir == None:
+        fig.savefig(f'{imageoutdir}{folder}/delta.png', format="png")
+    else:
+        fig.savefig(f'{outdir}{folder}/delta.png', format="png")
+
+
+
 
 
 
@@ -1538,4 +1622,4 @@ def getTeleImage_ONLINE(db:mysql.connector.MySQLConnection,
 # getFastestlapImage_ONLINE(dbconnect.connect_with_conf("server.json", "db"))
 # getLaptimeImage_ONLINE(dbconnect.connect_with_conf("server.json", "db"))
 # getTyrewearImage_ONLINE(dbconnect.connect_with_conf("server.json", "db"))
-# getTeleImage_ONLINE(dbconnect.connect_with_conf("server.json", "db"), 1687608241)
+# getTeleImage_ONLINE(dbconnect.connect_with_conf("server.json", "db"))
